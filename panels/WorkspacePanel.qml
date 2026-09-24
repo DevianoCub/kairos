@@ -6,30 +6,37 @@ import "../components"
 import "../config"
 
 // ─────────────────────────────────────────────
-// KAIROS WORKSPACE MATRIX (v0.3)
+// KAIROS WORKSPACE MATRIX (v0.3.1)
 //
-// Per-screen read-only view of the Niri workspace
-// strip. Consumes NiriService only — never touches
-// Niri IPC itself.
+// Per-screen read-only view of the desktop
+// workspace strip. Consumes the common
+// CompositorService contract only — no socket,
+// no compositor-specific protocol, no IPC.
 //
 //   WORKSPACES  eDP-1
+//      ▲
 //     01   02   03   04   05
-//     ▲     ▬   ...
+//     ▮    ▒          ▒
 //
-// Connected : matrix cells, ▲ caret + accent rail on
-//             the focused workspace, dots for occupied.
-// Disconnected: restrained "NIRI ○ OFFLINE" — no faked data.
+// Connected : matrix cells with a thin status rail
+//             under each column (focused = accent,
+//             occupied = strong line, urgent =
+//             warning, empty = quiet). ▲ caret and
+//             ACTIVE tag mark the display workspace.
+// Disconnected: restrained offline state — state is
+//             never fabricated.
 //
-// The window hangs under the TopHUD without reserving
-// screen space (layer-shell anchors have no margins, so
-// the offset is a transparent head region = HUD height).
+// The window hangs under the TopHUD without
+// reserving screen space (layer-shell anchors have
+// no margins, so the offset is a transparent head
+// region = HUD height).
 // ─────────────────────────────────────────────
 
 PanelWindow {
     id: wksp
 
     property var modelData
-    property var niriService: null
+    property var compositor: null
 
     screen: modelData
 
@@ -45,39 +52,51 @@ PanelWindow {
     visible: Settings.showWorkspacePanel
 
     // ─────────────────────────────────────────────
-    // DATA
+    // DATA (common desktop-state contract only)
     // ─────────────────────────────────────────────
 
     readonly property string output: modelData !== undefined && modelData !== null ? modelData.name : ""
 
-    readonly property bool offline: wksp.niriService === null || !wksp.niriService.connected
+    readonly property bool offline: wksp.compositor === null || !wksp.compositor.connected
 
     readonly property variant mine: wksp.offline
         ? []
-        : wksp.niriService.workspacesFor(wksp.output).slice(0, Settings.workspacesMaxCells)
+        : wksp.compositor.workspacesFor(wksp.output).slice(0, Settings.workspacesMaxCells)
 
     readonly property int mineCount: wksp.mine.length
     readonly property int cellsWidth: Math.max(1, wksp.mineCount) * Settings.wkspCellWidth
 
-    // Index of the display workspace (focused, else active) within this strip.
+    // Column of the display workspace (focused, else
+    // active) within this strip, or -1.
     readonly property int focusedCol: {
         if (wksp.offline) {
             return -1
         }
 
-        for (let i = 0; i < wksp.mine.length; i++) {
-            if (wksp.mine[i].isFocused) {
-                return i
-            }
+        return wksp.compositor.displayColumnFor(wksp.output)
+    }
+
+    // Offline readout — distinguishes "KAIROS has no
+    // backend for this compositor" from "backend link
+    // is down".
+    readonly property string linkCaption: {
+        if (wksp.compositor === null || wksp.compositor.name === "") {
+            return "desktop"
         }
 
-        for (let i = 0; i < wksp.mine.length; i++) {
-            if (wksp.mine[i].isActive) {
-                return i
-            }
+        return wksp.compositor.name
+    }
+
+    readonly property string linkValue: {
+        if (wksp.compositor === null || wksp.compositor.connectionState === "unsupported") {
+            return "◦ no backend"
         }
 
-        return -1
+        if (wksp.compositor.connectionState === "connecting") {
+            return "○ link"
+        }
+
+        return "○ offline"
     }
 
     readonly property int padX: 12
@@ -172,12 +191,12 @@ PanelWindow {
                 spacing: 8
 
                 HudLabel {
-                    caption: "niri"
+                    caption: wksp.linkCaption
                     anchors.verticalCenter: parent.verticalCenter
                 }
 
                 HudText {
-                    text: "○ offline"
+                    text: wksp.linkValue
                     color: Theme.muted
                     font.pixelSize: Theme.sizeLabel
                     font.letterSpacing: Theme.trackLabel
@@ -185,7 +204,8 @@ PanelWindow {
                 }
             }
 
-            // Connected but empty mapping for this output.
+            // Connected but no workspace mapping for this
+            // output.
             HudText {
                 visible: !wksp.offline && wksp.mineCount === 0
                 anchors.centerIn: parent
@@ -242,7 +262,7 @@ PanelWindow {
                     x: index * Settings.wkspCellWidth
 
                     HudText {
-                        text: String(ws.idx + 1).padStart(2, "0")
+                        text: wksp.compositor.workspaceLabel(ws)
                         color: {
                             if (ws.isFocused) return Theme.textBright
                             if (ws.isActive) return Theme.accentDim
@@ -252,22 +272,22 @@ PanelWindow {
                         font.bold: ws.isFocused
                         font.letterSpacing: 2
                         anchors.horizontalCenter: parent.horizontalCenter
-                        y: 11
+                        y: 10
                     }
 
-                    // Occupied / urgent marker.
+                    // Status rail: active = accent, occupied =
+                    // strong line, urgent = warning, idle = quiet.
                     Rectangle {
-                        width: 3
-                        height: 3
-                        y: 28
                         anchors.horizontalCenter: parent.horizontalCenter
-                        color: ws.urgent ? Theme.warning : (ws.windowCount > 0 ? Theme.lineStrong : "transparent")
-                        visible: ws.urgent || ws.windowCount > 0
+                        y: 34
+                        width: Settings.wkspCellWidth - 8
+                        height: 2
+                        color: ws.isUrgent ? Theme.warning : (ws.isFocused ? Theme.accent : (ws.occupied ? Theme.lineStrong : "transparent"))
                     }
                 }
             }
 
-            // ── BASELINE + FOCUS RAIL ──
+            // ── BASELINE ──
             Rectangle {
                 anchors {
                     left: parent.left
@@ -277,22 +297,6 @@ PanelWindow {
                 y: 36
                 height: 1
                 color: Theme.lineSoft
-            }
-
-            Rectangle {
-                visible: wksp.focusedCol >= 0
-                x: wksp.focusedCol * Settings.wkspCellWidth + 4
-                y: 32
-                width: Settings.wkspCellWidth - 8
-                height: 2
-                color: Theme.accent
-
-                Behavior on x {
-                    NumberAnimation {
-                        duration: Theme.animationFast
-                        easing.type: Theme.easing
-                    }
-                }
             }
         }
     }

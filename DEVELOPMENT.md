@@ -22,10 +22,12 @@ Run with verbose logging and inspect stderr:
 qs -c kairos -vv
 ```
 
-A clean startup prints the `[KAIROS] v0.3 online` line and no `TypeError` /
+A clean startup prints the `[KAIROS] v0.3.1 online` line and no `TypeError` /
 `is not defined` / binding-loop warnings. If the link to Niri is down you will
 see a single `[KAIROS] niri: link lost (...), retrying` warning per drop
-(paired with a `quickshell.io.socket` warn), then silent backoff retries.
+(paired with a `quickshell.io.socket` warn), then silent backoff retries. An
+empty `NIRI_SOCKET` produces **no** warnings — the backend stays in
+`unsupported` and probes at idle cadence.
 
 ## Add a component
 
@@ -39,14 +41,27 @@ Components are presentational: they must not poll services or run commands.
 
 ## Add a service
 
-1. Create `services/FooService.qml` as a `QtObject` (`QtQml`) — or an `Item`
-   when the service hosts child objects (e.g. `NiriService` owns a `Socket`
-   + `SplitParser` + `Timer`).
+1. Create `services/FooService.qml` as an `Item` (or `QtObject` when it hosts
+   no child objects). Services that own non-visual children — a `Socket` +
+   `SplitParser` + `Timer`, like `NiriBackend` — must root as `Item`
+   (QtObject has no default property for children).
 2. Expose only live `property` state.
 3. Own your own `Timer`/`Process`; choose coarse intervals
    (`Settings.fastInterval` / `slowInterval`).
 4. Degrade gracefully — when data is missing, set `N/A` / `OFF`, never throw.
 5. Instanciate it once in `shell.qml` and inject it into panels.
+
+## Add a compositor backend
+
+1. Read the common contract in `services/compositor/CompositorService.qml`.
+2. Add `services/compositor/<Family>Backend.qml` rooted as `CompositorService`
+   (import `"."` to see the sibling base).
+3. Drive `name`, `connected`, `connectionState` and the common state
+   (`workspaces`, `windows`, …) from that compositor's own IPC; reuse the base
+   helpers — never reimplement them.
+4. Swap the instantiation in `shell.qml`:
+   `property CompositorService compositor: <Family>Backend {}`.
+5. Keep the UI untouched.
 
 ## Add a panel
 
@@ -83,26 +98,40 @@ Runtime behavior lives in `config/Settings.qml` (HUD height, refresh, formats).
 
 ## Test the Niri link without Niri
 
-`NiriService` is a pure IPC client, so you can (and should) exercise it against
+`NiriBackend` is a pure IPC client, so you can (and should) exercise it against
 a fake compositor before touching a real session:
 
 1. Serve the EventStream protocol on a fake socket (niri-ipc ≥ 26.4 schema):
    accept the connection, read the `"EventStream"` request line, stream
-   newline-delimited JSON — `ConfigLoaded`, `WorkspacesChanged`, `WindowsChanged`,
-   then `WorkspaceActivated {id, focused}` moves, etc.
+   newline-delimited JSON — `WorkspacesChanged`, `WindowsChanged`, then
+   `WorkspaceActivated {id, focused}` moves (with 1-based `idx`).
 2. Run with `NIRI_SOCKET=/tmp/fake.sock qs -c kairos -v`.
-3. Confirm: `[KAIROS] niri: linked`, matrix cells track focus (`▲` caret),
-   closing the socket triggers `link lost ... retrying`, and restarting the
-   socket yields a clean relink with fresh full state.
+3. Confirm: `[KAIROS] niri: linked`, focus changes flow into
+   `connected` + the workspace model, closing the socket triggers
+   `link lost ... retrying` (states `reconnecting`/`error`), and restarting
+   the socket yields a clean relink with fresh full state.
 
-On a real Niri session the workflow is identical but keys off `WS1`/`WS2`…
-focus moves and confirms the output names in the panel match `Screen.name`.
+On a real Niri session use `niri msg action focus-workspace <n>` to switch
+workspaces, `niri msg action focus-window --id <n>` to change focus, and
+`niri msg action move-window-to-workspace <n>` to exercise occupancy —
+restore the session (workspace 1, original window) afterwards.
+
+## Real-session Niri checklist
+
+1. Start KAIROS → banner `v0.3.1`, `COMPOSITOR NIRI`, `WKSP 01` on workspace 1.
+2. Switch `WS1`…`WS4` → the `▲` caret, `WKSP` chip and matrix follow instantly
+   (Niri emits `WorkspaceActivated` only for switches — no full reload).
+3. Open/close a window, move one between workspaces → occupancy rails update.
+4. Restart KAIROS → state reconstructs from the first `WorkspacesChanged`.
+5. Restart Niri (or kill its socket) → KAIROS survives, reports
+   `reconnecting`, and relinks when Niri returns.
 
 ## Milestones
 
 - v0.1 top HUD (base identity + metrics)
 - v0.2 system telemetry — CPU/NET/TMP via `/proc` deltas + Gauge/Graph
-- v0.3 Niri IPC + workspace matrix (current)
+- v0.3 Niri IPC + workspace matrix
+- v0.3.1 hardened Niri backend + compositor seam (current)
 - v0.4+ GPU/DISK/BATTERY, command interface, control center, media,
   notifications, lock, power
 

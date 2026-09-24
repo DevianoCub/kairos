@@ -146,11 +146,11 @@ PanelWindow {
             Layout.preferredWidth: Theme.gutSpacing
         }
 
-        // ── WORKSPACE INDEX (v0.3, Niri only) ──
+        // ── WORKSPACE INDEX (v0.3+, desktop backend) ──
         Metric {
             label: "WKSP"
             value: hud.wkspLabel
-            visible: hud.niriService !== null && hud.niriService.connected
+            visible: hud.compositor !== null && hud.compositor.connected
             Layout.alignment: Qt.AlignVCenter
         }
 
@@ -380,20 +380,20 @@ PanelWindow {
 
     // Service instance owned by the shell, injected from shell.qml.
     property var systemService: null
-    property var niriService: null
+    property var compositor: null
 
-    // Compact workspace index chip (Niri only). "--" when the
-    // link is down or the screen has no workspace mapping.
+    // Compact workspace index chip (desktop backend). "--" when
+    // the link is down or the screen has no workspace mapping.
     property string wkspLabel: {
-        const niri = hud.niriService
+        const c = hud.compositor
 
-        if (niri === null || !niri.connected) {
+        if (c === null || !c.connected) {
             return "--"
         }
 
         const screenName = hud.screen !== undefined && hud.screen !== null ? hud.screen.name : ""
-        const idx = niri.displayIndexFor(screenName)
+        const idx = c.displayIndexFor(screenName)
 
-        return idx >= 0 ? String(idx + 1).padStart(2, "0") : "--"
+        return idx >= 0 ? String(idx).padStart(2, "0") : "--"
     }
 }

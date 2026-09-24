@@ -46,5 +46,6 @@ QtObject {
     readonly property int workspacesMaxCells: 12
     readonly property int niriRetryMinMs: 1000
     readonly property int niriRetryMaxMs: 10000
+    readonly property int niriRetryIdleMs: 5000
     readonly property int wkspCellWidth: 34
 }

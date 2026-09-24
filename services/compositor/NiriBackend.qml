@@ -1,71 +1,49 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import "../config"
+import "."
+import "../../config"
 
 // ─────────────────────────────────────────────
-// KAIROS NIRI SERVICE (v0.3)
+// KAIROS NIRI BACKEND (v0.3.1)
 //
-// Read-only bridge to the Niri compositor IPC.
-// Speaks the raw UNIX-socket protocol directly:
+// Read-only bridge to the Niri compositor IPC,
+// implementing the common CompositorService contract.
 //
-//   connect  →  wait for full-state events over the
-//               EventStream (single persistent socket,
-//               newline-delimited JSON), no subprocess.
+// Protocol (niri ≥ 26):
+//   connect  →  write a bare string `"EventStream"`\n
+//               over the raw NIRI_SOCKET. The compositor
+//               answers with an initial full-state burst,
+//               then pushes incremental events. All lines
+//               are newline-delimited JSON.
 //   events   →  WorkspacesChanged / WindowsChanged are
 //               authoritative full replacements.
-//               WorkspaceActivated ({id, focused} in
-//               niri ≥26) drives optimistic focus moves.
-//   failure  →  connected=false, exp. backoff retry.
+//               WorkspaceActivated {id, focused} drives
+//               optimistic focus moves; the authoritative
+//               WorkspacesChanged follows immediately.
+//               WindowOpenedOrChanged / WindowClosed /
+//               WindowFocusChanged patch window state.
+//   failure  →  connected = false, states reconnecting/
+//               error, exponential-backoff retry. No
+//               workspace data is ever fabricated.
 //
 // Never issues commands to Niri in this milestone.
-// The panel layer binds to state exposed here only.
 //
-// Exposed state:
-//   connected / connectionState / socketPath
-//   workspaces / activeWorkspaces / focusedWorkspace
-//   windows / focusedWindow / outputs
-//   workspacesFor(op), displayIndexFor(op), windowCounts
+// Exposed (via the base contract):
+//   name="Niri", connected, connectionState, workspaces,
+//   activeWorkspaces, focusedWorkspace, activeWorkspace,
+//   windows, focusedWindow, outputs, workspacesFor(...),
+//   displayColumnFor(...), displayIndexFor(...)
 // ─────────────────────────────────────────────
 
-Item {
+CompositorService {
     id: niri
-    width: 0
-    height: 0
-    visible: false
 
     // ─────────────────────────────────────────────
-    // CONNECTION STATE
+    // CONNECTION (Niri-specific details stay here)
     // ─────────────────────────────────────────────
 
-    property bool connected: false
-    property string connectionState: "disconnected" // disconnected | connecting | connected
     readonly property string socketPath: Quickshell.env("NIRI_SOCKET")
-
-    // ─────────────────────────────────────────────
-    // STRUCTURED STATE (UI binds here)
-    // ─────────────────────────────────────────────
-
-    // Workspace objects: { id, name, idx, output, isFocused,
-    //                      isActive, urgent, activeWindowId, windowCount }.
-    property variant workspaces: []
-
-    // Light window objects: { id, title, appId, workspaceId, isFocused }.
-    property variant windows: []
-
-    property variant focusedWorkspace: null // focused workspace, or null
-    property variant activeWorkspace: null    // focused if any, else first active
-    property variant activeWorkspaces: []
-    property variant focusedWindow: null
-    property variant outputs: []
-
-    signal workspaceActivated(real id, bool focused)
-
-    // ─────────────────────────────────────────────
-    // SOCKET / PARSER
-    // Quickshell.Io.Socket is a QLocalSocket. The SplitParser
-    // feeds us one JSON event per newline-delimited line.
-    // ─────────────────────────────────────────────
 
     Socket {
         id: niriSocket
@@ -98,8 +76,21 @@ Item {
         onTriggered: niri.tryConnect()
     }
 
+    Timer {
+        id: idleTimer
+        interval: Settings.niriRetryIdleMs
+
+        onTriggered: niri.tryConnect()
+    }
+
     // ─────────────────────────────────────────────
     // LIFECYCLE
+    //   disconnected   initial / idle
+    //   connecting     socket connect attempt
+    //   connected      event stream live
+    //   reconnecting   was connected, link dropped
+    //   error          connect attempt failed
+    //   unsupported    no NIRI_SOCKET (not Niri)
     // ─────────────────────────────────────────────
 
     function tryConnect() {
@@ -110,8 +101,9 @@ Item {
         const path = niri.socketPath
 
         if (path === "") {
-            niri.connectionState = "disconnected"
-            niri.scheduleRetry()
+            niri.connected = false
+            niri.connectionState = "unsupported"
+            idleTimer.start()
             return
         }
 
@@ -125,8 +117,8 @@ Item {
         niri.connectionState = "connected"
         niri._retryMs = Settings.niriRetryMinMs
 
-        // Request the event stream: complete state up-front,
-        // then incremental updates. One line, JSON bare string.
+        // Request the event stream: full state up-front,
+        // then incremental updates. One line, bare string.
         niriSocket.write('"EventStream"\n')
         niriSocket.flush()
 
@@ -138,8 +130,10 @@ Item {
             return
         }
 
+        const wasUp = niri.connectionState === "connected"
+
         niri.connected = false
-        niri.connectionState = "disconnected"
+        niri.connectionState = wasUp ? "reconnecting" : "error"
 
         console.warn(`[KAIROS] niri: link lost (${reason}), retrying`)
         niri.scheduleRetry()
@@ -195,37 +189,44 @@ Item {
         const key = keys[0]
         const payload = obj[key]
 
-        switch (key) {
-        case "ConfigLoaded":
-            // Always first; acknowledges the connection. No state.
-            break
-        case "WorkspacesChanged":
-            niri.rebuildWorkspaces(payload.workspaces)
-            break
-        case "WorkspaceActivated":
-            niri.workspaceActivated(payload.id, payload.focused)
-            niri.markWorkspaceFocused(payload.id, payload.focused)
-            break
-        case "WindowsChanged":
-            niri.rebuildWindows(payload.windows)
-            break
-        case "WindowOpenedOrChanged":
-            niri.upsertWindow(payload.window)
-            break
-        case "WindowClosed":
-            niri.removeWindow(payload.id)
-            break
-        case "WindowFocusChanged":
-            niri.setFocusedWindow(payload.id)
-            break
-        default:
-            // Urgency / layouts / keyboard / casts ... ignored in v0.3.
-            break
+        // A malformed payload must not kill the event stream;
+        // drop one event, keep the link.
+        try {
+            switch (key) {
+            case "ConfigLoaded":
+                // Acknowledges the connection. No state.
+                break
+            case "WorkspacesChanged":
+                niri.rebuildWorkspaces(payload.workspaces)
+                break
+            case "WorkspaceActivated":
+                niri.markWorkspaceFocused(payload.id, payload.focused)
+                break
+            case "WindowsChanged":
+                niri.rebuildWindows(payload.windows)
+                break
+            case "WindowOpenedOrChanged":
+                niri.upsertWindow(payload.window)
+                break
+            case "WindowClosed":
+                niri.removeWindow(payload.id)
+                break
+            case "WindowFocusChanged":
+                niri.setFocusedWindow(payload.id)
+                break
+            default:
+                // Everything else is ignored in v0.3.1.
+                break
+            }
+        } catch (error) {
+            console.warn(`[KAIROS] niri: dropped event (${error})`)
         }
     }
 
     // ─────────────────────────────────────────────
     // MODEL BUILDS (full-replacement events)
+    // Common shape: { id, index, name, output, isActive,
+    //                 isFocused, isUrgent, occupied }
     // ─────────────────────────────────────────────
 
     function rebuildWorkspaces(list) {
@@ -242,13 +243,13 @@ Item {
     function buildWorkspace(raw) {
         return {
             id: Number(raw.id),
+            index: raw.idx !== null && raw.idx !== undefined ? Number(raw.idx) : 0,
             name: raw.name !== null ? raw.name : null,
-            idx: raw.idx !== null && raw.idx !== undefined ? Number(raw.idx) : 0,
             output: raw.output !== null ? raw.output : "",
-            isFocused: !!raw.is_focused,
             isActive: !!raw.is_active,
-            urgent: !!raw.is_urgent,
-            activeWindowId: raw.active_window_id !== null ? Number(raw.active_window_id) : null,
+            isFocused: !!raw.is_focused,
+            isUrgent: !!raw.is_urgent,
+            occupied: false,
             windowCount: 0
         }
     }
@@ -273,13 +274,13 @@ Item {
     function cloneWorkspace(w, isFocused) {
         return {
             id: w.id,
+            index: w.index,
             name: w.name,
-            idx: w.idx,
             output: w.output,
-            isFocused: isFocused,
             isActive: w.isActive,
-            urgent: w.urgent,
-            activeWindowId: w.activeWindowId,
+            isFocused: isFocused,
+            isUrgent: w.isUrgent,
+            occupied: w.occupied,
             windowCount: w.windowCount
         }
     }
@@ -298,9 +299,10 @@ Item {
     function buildWindow(raw) {
         return {
             id: Number(raw.id),
-            title: raw.title !== null ? raw.title : "",
             appId: raw.app_id !== null ? raw.app_id : "",
+            title: raw.title !== null ? raw.title : "",
             workspaceId: raw.workspace_id !== null ? Number(raw.workspace_id) : null,
+            output: "",
             isFocused: !!raw.is_focused
         }
     }
@@ -347,9 +349,10 @@ Item {
     function cloneWindow(w, isFocused) {
         return {
             id: w.id,
-            title: w.title,
             appId: w.appId,
+            title: w.title,
             workspaceId: w.workspaceId,
+            output: w.output,
             isFocused: isFocused
         }
     }
@@ -386,8 +389,22 @@ Item {
             }
         }
 
+        const outputOf = {}
+
         for (const w of ws) {
-            w.windowCount = counts[w.id] || 0
+            outputOf[w.id] = w.output
+        }
+
+        for (const w of ws) {
+            const count = counts[w.id] || 0
+            w.windowCount = count
+            w.occupied = count > 0
+        }
+
+        for (const win of wsWindows) {
+            win.output = win.workspaceId !== null
+                ? (outputOf[win.workspaceId] !== undefined ? outputOf[win.workspaceId] : "")
+                : ""
         }
 
         niri.focusedWindow = niri.firstBy(wsWindows, "isFocused")
@@ -415,51 +432,11 @@ Item {
         return out
     }
 
-    // ─────────────────────────────────────────────
-    // VIEW HELPERS
-    // ─────────────────────────────────────────────
-
-    // Workspaces belonging to one output, ordered by idx.
-    function workspacesFor(output) {
-        const out = niri.workspaces.filter(function (w) {
-            return w.output === output
-        })
-
-        out.sort(function (a, b) {
-            return a.idx - b.idx
-        })
-
-        return out
-    }
-
-    // 0-based index of the display workspace for an output:
-    // the focused one if we have it, else this output's active.
-    function displayIndexFor(output) {
-        const mine = niri.workspacesFor(output)
-
-        let target = null
-
-        for (const w of mine) {
-            if (w.isFocused) {
-                target = w
-                break
-            }
-        }
-
-        if (target === null) {
-            for (const w of mine) {
-                if (w.isActive) {
-                    target = w
-                    break
-                }
-            }
-        }
-
-        return target !== null ? target.idx : -1
-    }
-
     property int _retryMs: Settings.niriRetryMinMs
     property bool _wasConnected: false
 
-    Component.onCompleted: tryConnect()
+    Component.onCompleted: {
+        niri.name = "Niri"
+        niri.tryConnect()
+    }
 }
