@@ -9,6 +9,14 @@ Ghost in the Shell / cyberpunk system HUDs, spacecraft cockpits and industrial
 instrumentation — but KAIROS has its **own identity**, its own terminology and
 its own architecture. Nothing is copied from existing projects.
 
+Showcase
+--------------------
+<img width="1920" height="1165" alt="image" src="https://github.com/user-attachments/assets/72094884-e87e-4585-9191-b1069fceedf2" />
+
+
+-----------------------
+
+
 Initial targets:
 
 - Compositor: **Niri**, **MangoWM** (any layer-shell capable Wayland compositor)
