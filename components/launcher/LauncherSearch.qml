@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
-import ".."
-import "../../config"
+import "file:/home/jupy/.config/quickshell/kairos/components"
+import "file:/home/jupy/.config/quickshell/kairos/config"
 
 // ─────────────────────────────────────────────
 // KAIROS LAUNCHER SEARCH FIELD (v0.5)
@@ -28,7 +28,7 @@ Item {
     // Programmatic access used by the Launcher.
     function setQuery(t) { input.text = t }
     function currentText() { return input.text }
-    // Pixel width of the typed command (drives the nucleus baseline).
+    // Pixel width of the typed command (drives the prompt baseline).
     function promptPixelWidth() { return input.contentWidth }
     function forceFocus() { input.forceActiveFocus() }
     function releaseFocus() {

@@ -54,17 +54,21 @@ QtObject {
 
     // Command center / app launcher (v0.5).
     //
-    // The Nexus is a compact centered column: the composition's maximum
-    // width, the vertical elevation of its center (positive = higher than
-    // true screen center) and the gap that separates the result column
-    // from the command nucleus. The result column breathes when few rows
-    // are shown and compacts into a tight stack for many.
+    // The launcher is an opaque command panel: a stable dark surface that
+    // isolates the list from whatever wallpaper sits behind it. launcherMaxWidth
+    // is the panel width, launcherCenterShiftY the elevation of its center
+    // above true screen center, launcherPanelPadding the inner margin of the
+    // surface. The result list breathes when few rows are shown and compacts
+    // into a tight stack for many.
     readonly property int launcherMaxWidth: 420
     readonly property int launcherCenterShiftY: 42
-    readonly property int launcherGateGap: 14
+    readonly property int launcherPanelPadding: 14
+    readonly property int launcherHeaderGap: 6
+    readonly property int launcherInputGap: 12
+    readonly property int launcherDividerGap: 8
     readonly property int launcherMaxResults: 8
     readonly property int launcherResultHeight: 26
-    readonly property int launcherNodeGapLoose: 18
-    readonly property int launcherNodeGapCompact: 8
+    readonly property int launcherNodeGapLoose: 14
+    readonly property int launcherNodeGapCompact: 5
     readonly property int launcherPromptWidth: 240
 }

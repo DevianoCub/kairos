@@ -6,7 +6,6 @@ import "services/compositor"
 import "services/commands"
 import "panels"
 import "components"
-import "components/launcher"
 import "config"
 
 // ─────────────────────────────────────────────
@@ -17,8 +16,9 @@ import "config"
 // Composition root only. Owns the service layer
 // and instantiates the panels: the per-screen
 // HUD, plus the GLOBAL contextual bottom rail
-// driven by a single FocusPulse, plus the
-// EPHEMERAL command-center launcher.
+// driven by a single FocusPulse, plus spawning
+// the EPHEMERAL command-center launcher as a
+// separate single-window process.
 //
 // Surfaces (layer-shell), counted by the
 // compositor while KAIROS is idle:
@@ -26,12 +26,11 @@ import "config"
 //                    exclusive top zone
 //   2. BottomRail    permanent, global overlay,
 //                    zero exclusion zone
-//   3. Launcher      EPHEMERAL: unmapped when
-//                    CLOSED, zero exclusion zone,
-//                    exists only while typing
-// The launcher adds a THIRD layer while open —
-// it is never a permanent panel and never
-// changes any window's work-area geometry.
+// The app launcher (kairos-launcher) adds a THIRD
+// layer surface only while open — unmapped when
+// CLOSED, zero exclusion zone, existing only
+// while typing. It is never a permanent panel and
+// never changes any window's work-area geometry.
 //
 // Services (data → state), one instance each,
 // shared by the whole shell; panels bind, never
@@ -39,11 +38,10 @@ import "config"
 //   systemService   machine telemetry
 //   compositor      common compositor seam (Niri)
 //   commands        v0.5 command bus (event bus)
-//   launcherService app discovery + search + run
 //
-// The launcher is triggered COMPOSITOR-AGNOSTICALLY
-// over Quickshell IPC:
-//   qs ipc -c kairos call kairos toggleLauncher
+// The launcher is triggered over Quickshell IPC in
+// the process that owns it:
+//   qs ipc -c kairos-launcher call kairos-launcher toggle
 // (niri keybind not configured in this milestone;
 // add `Super+Space` yourself).
 //
@@ -65,7 +63,6 @@ ShellRoot {
     property SystemService systemService: SystemService {}
     property CompositorService compositor: NiriBackend {}
     property var commands: CommandService {}
-    property var launcherService: AppLauncherService {}
 
     // Per-screen overlay HUD.
     Variants {
@@ -94,49 +91,32 @@ ShellRoot {
     // ─────────────────────────────────────────
     // COMMAND CENTER — APP LAUNCHER (v0.5)
     // ─────────────────────────────────────────
+    // The launcher runs in its OWN single-window
+    // quickshell process (kairos-launcher): niri only
+    // forwards exclusive keyboard input to a layer
+    // surface that maps as the sole surface of a
+    // process. In-process it could never receive
+    // typeahead (verified empirically), so this shell
+    // simply spawns that process and leaves its IPC
+    // handling to its own IpcHandler on the
+    // "kairos-launcher" target:
+    //   qs ipc -c kairos-launcher call kairos-launcher toggle
+    //
+    // The spawned process exposes the panel emergency:
+    // only if it dies does typeahead vanish; the bind
+    // target stays stable.
 
-    Launcher {
-        id: launcher
-        fb: fb
-        service: root.launcherService
-        commands: root.commands
+    property Process launcherProcess: Process {
+        command: [
+            "quickshell",
+            "-p",
+            "/home/jupy/.config/quickshell/kairos-launcher"
+        ]
+        running: true
     }
 
-    // Compositor-agnostic IPC trigger:
-    //   qs ipc -c kairos call kairos toggleLauncher
-    // The shell answers on the "kairos" target
-    // regardless of backend.
-    IpcHandler {
-        target: "kairos"
-        function toggleLauncher(): void {
-            launcher.toggle("ipc")
-        }
-        // Scripted driving of the exact keyboard code
-        // paths (query set / selection / activation), for
-        // `qs ipc call` control and verification.
-        function launcherQuery(text: string): void {
-            launcher.setQueryFromIPC(text)
-        }
-        function launcherMove(dir: int): void {
-            launcher.moveSelection(dir)
-        }
-        function launcherRun(): void {
-            launcher.activateSelection()
-        }
-        function launcherState(): string {
-            const s = launcher.service
-            const idx = launcher._selectedIndex
-            const n = s !== null ? s.results.length : 0
-            const nm = function(i) {
-                const r = i >= 0 && i < n ? s.results[i] : null
-                return r !== null ? String(r.name) : ""
-            }
-            return `${s.query}|count=${n}|idx=${idx}|sel=${nm(idx)}|0=${nm(0)}`
-        }
-        function launcherGeom(): void {
-            const m = launcher.margins
-            console.info(`[Launcher] geom m.bottom=${m.bottom.toFixed(1)} screenH=${launcher._screenH.toFixed(1)} dpr=${launcher._dpr} open=${launcher.open} w=${launcher.width} h=${launcher.height}`)
-        }
+    Component.onDestruction: {
+        launcherProcess.running = false
     }
 
     Component.onCompleted: {
