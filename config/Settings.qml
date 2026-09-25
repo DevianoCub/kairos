@@ -40,12 +40,19 @@ QtObject {
     readonly property int graphSamples: 48
     readonly property int gaugeSegments: 24
 
-    // Niri workspace matrix (v0.3).
-    readonly property bool showWorkspacePanel: true
-    readonly property int wkspPanelOffset: 6
-    readonly property int workspacesMaxCells: 12
+    // Niri backend (v0.3): connection retry cadence.
     readonly property int niriRetryMinMs: 1000
     readonly property int niriRetryMaxMs: 10000
     readonly property int niriRetryIdleMs: 5000
-    readonly property int wkspCellWidth: 34
+
+    // Bottom contextual rail (v0.4).
+    readonly property bool railHoverReveal: true
+    readonly property int railStripHeight: 12
+    readonly property int railHeight: 36
+    readonly property int railRevealMs: 3000
+    readonly property int railHoverGraceMs: 1200
+
+    // Temporary focus capsule (v0.4).
+    readonly property int focusCapsuleMs: 2500
+    readonly property int focusCapsuleOffset: 52
 }

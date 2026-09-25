@@ -30,8 +30,9 @@ Initial targets:
   (Niri, MangoWM, wlroots-based compositors, …)
 - Standard coreutils available in `$PATH` (`sh`, `awk`, `/proc` readable)
 - **Niri IPC (optional, v0.3+):** Niri ≥ 26 with `NIRI_SOCKET` exported in the
-  session environment. Without it KAIROS still runs; the workspace matrix and
-  the `WKSP` chip simply report an honest offline state.
+  session environment. Without it KAIROS still runs; the workspace state
+  consumers (the contextual active-window layer) simply report an honest
+  offline state.
 
 ## Install / Run
 
@@ -82,6 +83,40 @@ means writing one backend, not touching the UI.
 
 ## Current state
 
+- **v0.5** — **top-left workspace matrix removed**: the per-screen
+  `panels/WorkspacePanel.qml` strip is deleted. The bottom rail is now the
+  single workspace indicator (identity + WS id + clock), so the desktop isn't
+  duplicated top-left/bottom. The TopHUD stays.
+- **v0.4** — **contextual active-window UX** (single global surface, not
+  per-output):
+  - **Bottom contextual rail** (`panels/BottomRail.qml`) — one full-width
+    strip; invisible by default (a 12 px transparent hover strip only);
+    revealed by hovering the bottom edge, by a focused-window / workspace
+    change (forced reveal, auto-dismissed after `railRevealMs`), or stays
+    open while the pointer is on it. Shows window identity, the display
+    **workspace id**, and the clock. Disconnect reverts it to the bare strip.
+    A single bottom anchor + `exclusiveZone: heightNow` keeps it pinned to the
+    true bottom edge through hide/reveal cycles.
+  - **Focus capsule** (`panels/FocusCapsule.qml`) — a small floating sheet
+    near the bottom center that answers a focused-window or workspace change
+    for `focusCapsuleMs` (~2.5 s), then fades out. Workspace-only switches on
+    empty workspaces render a `WORKSPACE 04` variant. It is non-focusable and
+    tiny, so its brief input footprint is negligible.
+  - **`components/FocusPulse.qml`** — the single global controller: a
+    fingerprint of the focused output (`focused window id | display
+    workspace`), `pulse++` only on a *logical* target change. **Title-only
+    edits update in place without replaying the entrance animation.**
+    Disconnect zeros the fingerprint and hides both instruments; reconnect
+    repopulates with a single pulse.
+  - Both instruments bind their `screen` to the focused workspace's output, so
+    the single capsule/rail follows the user instead of being duplicated per
+    monitor. The permanent TopHUD **WKSP chip is removed** — workspace
+    association is now conveyed contextually by the rail/capsule, keeping the
+    idle desktop clean.
+  - Still consumes only the common `CompositorService` contract; no
+    Niri-specific dependency in any visual component. The `WindowIdentity`
+    row (monogram tile, appId, elided title) is shared by rail and capsule and
+    is reusable for the future right-side contextual drawer.
 - **v0.3.1** — **hardened Niri integration + compositor seam**:
   - `services/compositor/CompositorService.qml` — the **common desktop-state
     contract** the UI binds to: `connected`, `connectionState`,
@@ -99,10 +134,13 @@ means writing one backend, not touching the UI.
     per-column status rails (active = accent, occupied = strong, urgent =
     warning, idle = quiet), `▲` caret + `ACTIVE` tag, and restrained offline
     readouts (`◦ no backend` when no compositor is supported, `○ offline` /
-    `○ link` during outages) — no fabricated data.
-  - The TopHUD **WKSP** chip now reads the compositor-native index correctly
-    (Niri is 1-based), `--` while the link is down. `Settings.showWorkspacePanel`
-    toggles the panel; retry cadence is `niriRetryMinMs` / `niriRetryMaxMs` /
+    `○ link` during outages) — no fabricated data. **Removed in v0.5** (see
+    Current state); the bottom rail is now the single workspace indicator.
+  - The TopHUD **WKSP** chip (added in v0.3) read the compositor-native index
+    correctly — Niri is 1-based — and showed `--` while the link was down.
+    (As of v0.4 the chip is removed: the downlink state is honest, but the
+    desktop stays quiet; workspace association now lives in the contextual
+    rail/capsule.) The retry cadence is `niriRetryMinMs` / `niriRetryMaxMs` /
     `niriRetryIdleMs`.
 - **v0.3** — Niri IPC + workspace matrix (superseded by the v0.3.1 backend).
 - **v0.2** — Top HUD overlay on every screen: identity, status, compositor
@@ -113,4 +151,4 @@ means writing one backend, not touching the UI.
   - **TMP** — max on-die temperature from Linux thermal zones.
   - Derived status (`ONLINE` / `CAUTION` / `CRITICAL`) from real thresholds.
 - Planned: GPU/DISK/BATTERY telemetry, command interface, control center,
-  media, notifications, lock, power UI.
+  right-side contextual drawer, media, notifications, lock, power UI.

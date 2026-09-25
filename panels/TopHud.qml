@@ -146,18 +146,6 @@ PanelWindow {
             Layout.preferredWidth: Theme.gutSpacing
         }
 
-        // ── WORKSPACE INDEX (v0.3+, desktop backend) ──
-        Metric {
-            label: "WKSP"
-            value: hud.wkspLabel
-            visible: hud.compositor !== null && hud.compositor.connected
-            Layout.alignment: Qt.AlignVCenter
-        }
-
-        Item {
-            Layout.preferredWidth: Theme.gutSpacing
-        }
-
         // ── SEPARATOR ──
         HudLine {
             orientation: Qt.Vertical
@@ -379,21 +367,7 @@ PanelWindow {
     }
 
     // Service instance owned by the shell, injected from shell.qml.
+    // (Workspace association is carried by the bottom contextual
+    // rail since v0.4, so the HUD no longer exposes a WKSP chip.)
     property var systemService: null
-    property var compositor: null
-
-    // Compact workspace index chip (desktop backend). "--" when
-    // the link is down or the screen has no workspace mapping.
-    property string wkspLabel: {
-        const c = hud.compositor
-
-        if (c === null || !c.connected) {
-            return "--"
-        }
-
-        const screenName = hud.screen !== undefined && hud.screen !== null ? hud.screen.name : ""
-        const idx = c.displayIndexFor(screenName)
-
-        return idx >= 0 ? String(idx).padStart(2, "0") : "--"
-    }
 }

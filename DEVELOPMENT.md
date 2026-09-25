@@ -22,7 +22,7 @@ Run with verbose logging and inspect stderr:
 qs -c kairos -vv
 ```
 
-A clean startup prints the `[KAIROS] v0.3.1 online` line and no `TypeError` /
+A clean startup prints the `[KAIROS] v0.4 online` line and no `TypeError` /
 `is not defined` / binding-loop warnings. If the link to Niri is down you will
 see a single `[KAIROS] niri: link lost (...), retrying` warning per drop
 (paired with a `quickshell.io.socket` warn), then silent backoff retries. An
@@ -65,9 +65,12 @@ Components are presentational: they must not poll services or run commands.
 
 ## Add a panel
 
-1. For per-screen UI, the root type is `PanelWindow` with
-   `required property var modelData` + `screen: modelData`.
-2. For global UI (later), use a single `PanelWindow`/`PopupWindow` outside Variants.
+1. The Top HUD and Workspace Matrix are per-screen: root type is `PanelWindow`
+   with `required property var modelData` + `screen: modelData` inside
+   `Variants`.
+2. The contextual layer is **single-global**: one `BottomRail`, one
+   `FocusCapsule`, one `FocusPulse`. Panels bind `screen: pulse.targetScreen`
+   to follow the focused output — never duplicate them per screen.
 3. Inject services via properties (e.g. `systemService: root.systemService`).
 4. Compose from components; no raw `Text`/`Rectangle` color literals.
 
@@ -94,6 +97,22 @@ Runtime behavior lives in `config/Settings.qml` (HUD height, refresh, formats).
   binding that writes to a property it reads (e.g. `text` deriving from `text`).
 - **Window not appearing** — verify the compositor supports layer-shell and
   that `Quickshell.screens` contains your outputs.
+- **Bottom surfaces stacking mid-screen** — Quickshell sets `exclusionMode:
+  Auto` by default, which reserves `implicitHeight + reverse margin` at the
+  anchored edge. Two bottom-anchored panels then stack instead of placing
+  where you expect. Give the edge-owner an explicit
+  `exclusiveZone: <its height>` and give floaters above it `exclusiveZone: 0`
+  (their margins are then measured from the edge-owner's top).
+- **Opaque white stripe when hidden** — `PanelWindow.color` defaults to
+  **white** (Quickshell docs). A panel whose children fade to `opacity: 0`
+  shows a white slab; set `color: "transparent"` on the window and let the
+  interior paint when visible.
+- **Stale test instances** — orphaned Quickshell instances keep their layer
+  surfaces alive and silently push/cover the new ones. Always check
+  `niri msg -j layers` for unexpected `quickshell` surfaces (there should be
+  exactly one per panel) and kill with `pkill -9 -f '[q]uickshell -p'` (the
+  `[q]` bracket prevents `pkill` from matching your own command line — never
+  put the plain process name in the same command).
 - **Noisy logs** — services should only emit on state failures, not per tick.
 
 ## Test the Niri link without Niri
@@ -116,23 +135,56 @@ workspaces, `niri msg action focus-window --id <n>` to change focus, and
 `niri msg action move-window-to-workspace <n>` to exercise occupancy —
 restore the session (workspace 1, original window) afterwards.
 
+## Test the v0.4 contextual layer
+
+Verify the two v0.4 instruments (`BottomRail`, `FocusCapsule`) without
+touching them visually:
+
+1. **Idle clean** — with KAIROS running, the only bottom artifact is a
+   transparent 12 px strip; no permanent active-window panel, no chip.
+2. **Live switches** — `focus-workspace <n>` / `focus-window --id <n>` should
+   produce a capsule (window variant, or `WORKSPACE` variant on an empty
+   workspace) that auto-fades after ~2.5 s, and a forced rail reveal that
+   auto-dismisses after ~3 s of inactivity. Move the pointer away from the
+   bottom edge between actions so the forced timers actually fire.
+3. **Hover** — move the pointer to the bottom edge: the rail reveals
+   (height 12 → 36), and collapses after `railHoverGraceMs` once the pointer
+   leaves. There is no global pointer API on Wayland, so this is a manual
+   check (`xdotool mousemove` works if installed).
+4. **Title-only change** — with the focus capsule not visible, retitle the
+   focused window (e.g. retitle a terminal). No capsule/rail replay should
+   occur; the text in an already-revealed rail updates in place.
+5. **Disconnect/reconnect** — killing the fake socket (harness above) hides
+   both instruments; relinking repopulates the rail and fires a single pulse.
+6. **No-window state** — switching to an empty workspace collapses the window
+   block in the revealed rail (clock + `WS 04` remain) and pulses the
+   workspace-only capsule.
+
 ## Real-session Niri checklist
 
-1. Start KAIROS → banner `v0.3.1`, `COMPOSITOR NIRI`, `WKSP 01` on workspace 1.
-2. Switch `WS1`…`WS4` → the `▲` caret, `WKSP` chip and matrix follow instantly
-   (Niri emits `WorkspaceActivated` only for switches — no full reload).
-3. Open/close a window, move one between workspaces → occupancy rails update.
-4. Restart KAIROS → state reconstructs from the first `WorkspacesChanged`.
+1. Start KAIROS → banner `v0.4`, `COMPOSITOR NIRI`; no permanent workspace UI
+   and no top-left matrix (v0.5) — the desktop is clean until interaction.
+   Bottom edge shows only the 12 px strip.
+2. Switch `WS1`…`WS4` → (Niri emits `WorkspaceActivated` only for switches —
+   no full reload); the focus capsule pulses and auto-fades; the rail reveals
+   (window identity + `WS nn`) and auto-dismisses.
+3. Open/close a window, move one between workspaces → the revealed rail's
+   identity row updates; workspace-only switches render the bare `WS nn`.
+4. Restart KAIROS → state reconstructs from the first `WorkspacesChanged`;
+   the restored window name appears once in the capsule.
 5. Restart Niri (or kill its socket) → KAIROS survives, reports
-   `reconnecting`, and relinks when Niri returns.
+   `reconnecting`, both instruments hide, and relinks when Niri returns.
 
 ## Milestones
 
 - v0.1 top HUD (base identity + metrics)
 - v0.2 system telemetry — CPU/NET/TMP via `/proc` deltas + Gauge/Graph
 - v0.3 Niri IPC + workspace matrix
-- v0.3.1 hardened Niri backend + compositor seam (current)
-- v0.4+ GPU/DISK/BATTERY, command interface, control center, media,
-  notifications, lock, power
+- v0.3.1 hardened Niri backend + compositor seam
+- v0.4 contextual active-window UX — bottom rail + focus capsule
+  (current)
+- v0.5 top-left workspace matrix removed; rail = single workspace indicator
+- v0.5+ GPU/DISK/BATTERY telemetry, command interface, control center,
+  right-side contextual drawer, media, notifications, lock, power
 
 Implement in order; validate each milestone before starting the next.
