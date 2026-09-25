@@ -87,16 +87,30 @@ means writing one backend, not touching the UI.
   the entire contextual layer is exactly **one** thin surface on the bottom
   edge. Nothing floats over the wallpaper, nothing stacks, and the HUD is
   left untouched; the center of the desktop stays pure negative space.
+  - **Layer-shell split** — the **HUD is the real desktop panel**: it
+    reserves its top exclusion zone (`Settings.exclusiveZone = hudHeight`),
+    so application windows work around it. The **BottomRail is an overlay**:
+    `exclusiveZone: 0`, so it reserves **zero** work-area and application
+    window geometry never changes when the rail appears or hides. The rail is
+    bottom-anchored and floats over the bottom edge of whatever is beneath it.
   - **Bottom contextual rail** (`panels/BottomRail.qml`) — one full-width
     strip; invisible by default (a 12 px transparent hover strip only).
-    Revealed by a focused-window / workspace change (forced reveal,
-    auto-dismissed after `railRevealMs` ≈ 3 s), or by hovering the bottom
-    edge (with an exit grace). It answers **active-window context** only:
+    Revealed by a focused-window / workspace change, or by hovering the
+    bottom edge. It answers **active-window context** only:
       - window focused → `[K] kitty   ~/projects/kairos   WS 03`
       - empty workspace → `WORKSPACE 03`
     Disconnect reverts to the bare strip. No clock, no metrics — that already
-    lives in the TopHUD. A single bottom anchor + `exclusiveZone: heightNow`
-    keeps it pinned to the true bottom edge through hide/reveal cycles.
+    lives in the TopHUD.
+  - **Deterministic auto-hide** — visibility is a single state machine with
+    one rule: `revealed = fForced || fPointer || fGrace`. The four states are
+    `HIDDEN / FORCED_REVEAL / HOVER_REVEAL / HIDE_PENDING`. `fForced` is set
+    only by a *logical* focus/workspace change and cleared by the single
+    reveal timer after `railRevealMs` (3 s) — unless the pointer sits inside.
+    Pointer enter/leave drive `fPointer`/`fGrace` through the exit grace
+    (`railHoverGraceMs`). Each timer clears exactly one flag; a sole
+    `reevaluate()` owns the transitions, so no race can leave the rail visible
+    indefinitely. Every transition and timer start/stop is logged as
+    `[Rail] ...` (kept in until the behavior is proven).
   - The **focus capsule is removed**: no floating sheet ever appears over the
     wallpaper. Workspace changes use the same rail mechanism (the `WORKSPACE`
     variant) instead of a second surface.
@@ -104,8 +118,9 @@ means writing one backend, not touching the UI.
     fingerprint of the focused output (`focused window id | display
     workspace`), `pulse++` only on a *logical* target change. Title-only
     edits update in place without replaying the entrance animation.
-    Disconnect zeros the fingerprint and hides the rail; reconnect
-    repopulates with a single pulse.
+    Disconnect zeros the fingerprint and hides the rail; a **reconnect to the
+    same target stays silent** (no redundant reveal) — only a genuinely new
+    target pulses.
   - The rail binds its `screen` to the focused workspace's output, so the
     single surface follows the user instead of being duplicated per monitor.
     The desktop between HUD and rail stays cleanly empty.

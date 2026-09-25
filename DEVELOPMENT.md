@@ -100,9 +100,11 @@ Runtime behavior lives in `config/Settings.qml` (HUD height, refresh, formats).
 - **Bottom surfaces stacking mid-screen** — Quickshell sets `exclusionMode:
   Auto` by default, which reserves `implicitHeight + reverse margin` at the
   anchored edge. Two bottom-anchored panels then stack instead of placing
-  where you expect. Give the edge-owner an explicit
-  `exclusiveZone: <its height>` and give floaters above it `exclusiveZone: 0`
-  (their margins are then measured from the edge-owner's top).
+  where you expect. Make the rail a pure overlay with
+  `exclusiveZone: 0` (the setter forces exclusion-mode `Normal`, i.e. zero
+  reservation) so it never competes for the edge and never moves application
+  windows; the top HUD is the one surface that reserves (via
+  `Settings.exclusiveZone`).
 - **Opaque white stripe when hidden** — `PanelWindow.color` defaults to
   **white** (Quickshell docs). A panel whose children fade to `opacity: 0`
   shows a white slab; set `color: "transparent"` on the window and let the
@@ -139,24 +141,33 @@ restore the session (workspace 1, original window) afterwards.
 
 Verify the single v0.4 surface (`BottomRail`) without touching it visually:
 
+Each reveal/hide must appear in the log as a state transition
+(`[Rail] HIDDEN -> FORCED_REVEAL reason=focus-change`, `-> HIDDEN
+reason=timer`, `HOVER_REVEAL -> HIDE_PENDING`, …).
+
 1. **Idle clean** — with KAIROS running, the only bottom artifact is a
    transparent 12 px strip; no permanent active-window panel, no floating
    capsule, no chip. Nothing else is on screen over the wallpaper.
-2. **Live switches** — `focus-workspace <n>` / `focus-window --id <n>` should
-   force-reveal the rail (window variant, or `WORKSPACE` variant on an empty
-   workspace) and auto-dismiss after ~3 s of inactivity. Move the pointer away
-   from the bottom edge between actions so the forced timers actually fire.
-3. **Hover** — move the pointer to the bottom edge: the rail reveals
-   (height 12 → 36), and collapses after `railHoverGraceMs` once the pointer
-   leaves. There is no global pointer API on Wayland, so this is a manual
-   check (`xdotool mousemove` works if installed).
-4. **Title-only change** — retitle the focused window (e.g. retitle a
-   terminal). No replay should occur; the text in an already-revealed rail
-   updates in place.
-5. **Disconnect/reconnect** — killing the fake socket (harness above) hides
-   the rail; relinking repopulates it and fires a single pulse.
-6. **No-window state** — switching to an empty workspace renders the
-   `WORKSPACE 03` variant in the revealed rail.
+2. **Zero work-area** — before revealing, record a focused window's geometry
+   (`niri msg -j windows`); after a forced reveal it must be byte-identical.
+   The rail is an overlay (`exclusiveZone: 0`); windows never move.
+3. **Forced reveal auto-hide** — `focus-workspace <n>` / `focus-window --id
+   <n>` force-reveals the rail (window variant, or `WORKSPACE` on an empty
+   workspace). WITHOUT touching the mouse, it must hide after ~3 s. Repeat
+   several times.
+4. **Hover keeps it visible** — force-reveal, then move the pointer into the
+   rail before 3 s: it stays visible (state leaves `FORCED_REVEAL` only when
+   the timer fires). Move the pointer away: `HOVER_REVEAL -> HIDE_PENDING`,
+   then `-> HIDDEN` after `railHoverGraceMs`.
+5. **No replay on non-change** — a title-only edit (retitle the focused
+   window) must NOT pulse: no `[Rail]` reveal, the reveal timer is not
+   restarted, text in an already-revealed rail updates in place.
+6. **Reconnect without change** — restart the backend socket; if the focused
+   target is unchanged there is no reveal. A genuinely new target pulses once.
+7. **Determinism under stress** — repeatedly switch `ws1→ws2→ws3→ws1` and
+   repeatedly `focus-window` between two windows; the rail must reveal and
+   dismiss identically every cycle. Any log line where two timers fight over
+   visibility is a bug.
 
 ## Real-session Niri checklist
 

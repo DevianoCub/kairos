@@ -58,6 +58,10 @@ Item {
     // model, so a reconnect always re-pulses once.
     property string _key: ""
 
+    // Last known fingerprint kept across a disconnect, so a reconnect to
+    // the SAME logical target does not produce a redundant reveal.
+    property string _savedKey: ""
+
     readonly property var primaryScreen: Quickshell.screens.length > 0 ? Quickshell.screens[0] : null
 
     function screenForName(name) {
@@ -83,6 +87,11 @@ Item {
 
         if (c === null || c === undefined || !c.connected) {
             fb.stale = true
+            // Preserve the last known logical target so a reconnect to the
+            // SAME target stays silent (no redundant reveal).
+            if (fb._key !== "" && fb._savedKey === "") {
+                fb._savedKey = fb._key
+            }
             fb.window = null
             fb.hasWindow = false
             fb.workspaceId = "--"
@@ -114,6 +123,18 @@ Item {
 
         const id = fb.hasWindow ? String(w.id) : "none"
         const key = id + "|" + (ws !== null && ws !== undefined ? String(ws.id) : "?")
+
+        // Reconnect to the same logical target: keep state in place but do
+        // not pulse, so the rail does not re-reveal on a non-change.
+        if (fb._savedKey !== "") {
+            const same = (key === fb._savedKey)
+            fb._savedKey = ""
+            if (same && key !== "") {
+                fb._key = key
+                fb.titleOnly = true
+                return
+            }
+        }
 
         if (key !== fb._key) {
             fb._key = key

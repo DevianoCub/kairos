@@ -25,11 +25,11 @@ QtObject {
     readonly property string dateFormat: "dd/MM/yyyy"
     readonly property bool showDate: false
 
-    // Whether the HUD reserves screen space below it.
-    // 0 keeps KAIROS as a pure overlay. Set > 0 to
-    // push windows down (requires compositor layer-shell
-    // exclusive zone support).
-    readonly property int exclusiveZone: 0
+    // The HUD is the real desktop panel: it reserves its
+    // top exclusion zone so application windows work
+    // around it. (layer-shell exclusive zone > 0 = push
+    // windows down below the HUD; 0 = pure overlay.)
+    readonly property int exclusiveZone: settings.hudHeight
 
     // Update intervals (ms). Higher-frequency metrics
     // may slot in at these cadences later.

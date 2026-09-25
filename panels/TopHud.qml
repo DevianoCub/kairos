@@ -8,10 +8,11 @@ import "../config"
 // ─────────────────────────────────────────────
 // KAIROS TOP HUD
 //
-// The overlay bar (v0.2). Runs once per screen as a
-// layer-shell panel, reserves no screen space, and
-// renders live system state without touching the
-// compositor layout.
+// The real desktop panel (v0.2). Runs once per screen
+// as a layer-shell panel and reserves its top exclusion
+// zone (`Settings.exclusiveZone`), so application
+// windows work around it. The BottomRail — an overlay —
+// is the only layer surface that never reserves space.
 // ─────────────────────────────────────────────
 
 PanelWindow {

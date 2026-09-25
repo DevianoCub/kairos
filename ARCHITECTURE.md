@@ -198,8 +198,8 @@ Design rules:
 - **Contextual, not persistent.** The rail answers a state *change*, then gets
   out of the way. `FocusPulse.pulse` increments only when the **target**
   changes; retitles mutate in place without replaying the entrance animation.
-  Disconnect zeros the fingerprint and hides the rail; relink repopulates with
-  one pulse.
+  Disconnect zeros the fingerprint and hides the rail; a relink to the **same**
+  target is silent (no redundant reveal) — only a genuinely new target pulses.
 - **Compositor-agnostic.** `FocusPulse`, `WindowIdentity` and `BottomRail`
   bind only to `CompositorService`. The monogram tile (first letter of
   `appId`) is the identity glyph; there is **no icon-theme lookup** — KAIROS
@@ -207,9 +207,21 @@ Design rules:
 - **One surface, follow-the-focus.** A single `FocusPulse` keys off the
   focused workspace owner output (`targetScreen`), and the rail binds its
   `screen` to it. It is never duplicated per output and never stacks.
-- **Edge ownership.** A single bottom anchor plus `exclusiveZone: heightNow`
-  pins the rail to the true bottom edge and keeps it there through every
-  hide/reveal cycle.
+- **Edge ownership.** The HUD (top) is the desktop panel: it reserves its top
+  exclusion zone (`Settings.exclusiveZone`). The rail is the opposite — a
+  pure overlay with `exclusiveZone: 0` (quickshell's setter forces
+  exclusion-mode `Normal`), so it reserves **zero** work-area and application
+  window geometry never changes when it appears. A single bottom anchor keeps
+  it at the physical bottom edge through every hide/reveal cycle.
+- **Deterministic auto-hide.** Exactly one rule decides visibility —
+  `revealed = fForced || fPointer || fGrace` — across four states
+  (`HIDDEN / FORCED_REVEAL / HOVER_REVEAL / HIDE_PENDING`). `fForced` is set
+  only by a logical focus/workspace change and cleared only by the one reveal
+  timer (3 s, unless the pointer sits inside); pointer enter/leave drive
+  `fPointer`/`fGrace` and the single grace timer. No two timers ever fight:
+  each clears exactly one flag and one `reevaluate()` owns the transitions.
+  Every transition / timer start-stop is logged (`[Rail] ...`, kept until
+  proven).
 - **Input.** In Quickshell 0.3.1 `PanelWindow` has no `passThrough`, so the
   revealed rail uses a `MouseArea` (its hidden state is only a 12 px strip,
   `railHoverReveal` toggles hover). Focus-stealing is a known interaction
