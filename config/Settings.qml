@@ -51,8 +51,4 @@ QtObject {
     readonly property int railHeight: 36
     readonly property int railRevealMs: 3000
     readonly property int railHoverGraceMs: 1200
-
-    // Temporary focus capsule (v0.4).
-    readonly property int focusCapsuleMs: 2500
-    readonly property int focusCapsuleOffset: 52
 }

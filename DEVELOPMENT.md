@@ -65,11 +65,11 @@ Components are presentational: they must not poll services or run commands.
 
 ## Add a panel
 
-1. The Top HUD and Workspace Matrix are per-screen: root type is `PanelWindow`
+1. The Top HUD is per-screen: root type is `PanelWindow`
    with `required property var modelData` + `screen: modelData` inside
    `Variants`.
 2. The contextual layer is **single-global**: one `BottomRail`, one
-   `FocusCapsule`, one `FocusPulse`. Panels bind `screen: pulse.targetScreen`
+   `FocusPulse`. Panels bind `screen: pulse.targetScreen`
    to follow the focused output — never duplicate them per screen.
 3. Inject services via properties (e.g. `systemService: root.systemService`).
 4. Compose from components; no raw `Text`/`Rectangle` color literals.
@@ -137,43 +137,41 @@ restore the session (workspace 1, original window) afterwards.
 
 ## Test the v0.4 contextual layer
 
-Verify the two v0.4 instruments (`BottomRail`, `FocusCapsule`) without
-touching them visually:
+Verify the single v0.4 surface (`BottomRail`) without touching it visually:
 
 1. **Idle clean** — with KAIROS running, the only bottom artifact is a
-   transparent 12 px strip; no permanent active-window panel, no chip.
+   transparent 12 px strip; no permanent active-window panel, no floating
+   capsule, no chip. Nothing else is on screen over the wallpaper.
 2. **Live switches** — `focus-workspace <n>` / `focus-window --id <n>` should
-   produce a capsule (window variant, or `WORKSPACE` variant on an empty
-   workspace) that auto-fades after ~2.5 s, and a forced rail reveal that
-   auto-dismisses after ~3 s of inactivity. Move the pointer away from the
-   bottom edge between actions so the forced timers actually fire.
+   force-reveal the rail (window variant, or `WORKSPACE` variant on an empty
+   workspace) and auto-dismiss after ~3 s of inactivity. Move the pointer away
+   from the bottom edge between actions so the forced timers actually fire.
 3. **Hover** — move the pointer to the bottom edge: the rail reveals
    (height 12 → 36), and collapses after `railHoverGraceMs` once the pointer
    leaves. There is no global pointer API on Wayland, so this is a manual
    check (`xdotool mousemove` works if installed).
-4. **Title-only change** — with the focus capsule not visible, retitle the
-   focused window (e.g. retitle a terminal). No capsule/rail replay should
-   occur; the text in an already-revealed rail updates in place.
+4. **Title-only change** — retitle the focused window (e.g. retitle a
+   terminal). No replay should occur; the text in an already-revealed rail
+   updates in place.
 5. **Disconnect/reconnect** — killing the fake socket (harness above) hides
-   both instruments; relinking repopulates the rail and fires a single pulse.
-6. **No-window state** — switching to an empty workspace collapses the window
-   block in the revealed rail (clock + `WS 04` remain) and pulses the
-   workspace-only capsule.
+   the rail; relinking repopulates it and fires a single pulse.
+6. **No-window state** — switching to an empty workspace renders the
+   `WORKSPACE 03` variant in the revealed rail.
 
 ## Real-session Niri checklist
 
-1. Start KAIROS → banner `v0.4`, `COMPOSITOR NIRI`; no permanent workspace UI
-   and no top-left matrix (v0.5) — the desktop is clean until interaction.
-   Bottom edge shows only the 12 px strip.
+1. Start KAIROS → banner `v0.4`, `COMPOSITOR NIRI`; no permanent workspace UI,
+   no top-left matrix, no floating capsule — the desktop is clean until
+   interaction. Bottom edge shows only the 12 px strip.
 2. Switch `WS1`…`WS4` → (Niri emits `WorkspaceActivated` only for switches —
-   no full reload); the focus capsule pulses and auto-fades; the rail reveals
-   (window identity + `WS nn`) and auto-dismisses.
+   no full reload); the rail reveals (window identity + `WS nn`, or
+   `WORKSPACE nn` on empty workspaces) and auto-dismisses.
 3. Open/close a window, move one between workspaces → the revealed rail's
-   identity row updates; workspace-only switches render the bare `WS nn`.
+   identity row updates.
 4. Restart KAIROS → state reconstructs from the first `WorkspacesChanged`;
-   the restored window name appears once in the capsule.
+   the restored window name appears once in the rail.
 5. Restart Niri (or kill its socket) → KAIROS survives, reports
-   `reconnecting`, both instruments hide, and relinks when Niri returns.
+   `reconnecting`, the rail hides, and relinks when Niri returns.
 
 ## Milestones
 
@@ -181,9 +179,9 @@ touching them visually:
 - v0.2 system telemetry — CPU/NET/TMP via `/proc` deltas + Gauge/Graph
 - v0.3 Niri IPC + workspace matrix
 - v0.3.1 hardened Niri backend + compositor seam
-- v0.4 contextual active-window UX — bottom rail + focus capsule
+- v0.4 contextual active-window UX — one bottom rail; capsule + matrix
+  removed (design correction), rail = the single workspace indicator
   (current)
-- v0.5 top-left workspace matrix removed; rail = single workspace indicator
 - v0.5+ GPU/DISK/BATTERY telemetry, command interface, control center,
   right-side contextual drawer, media, notifications, lock, power
 

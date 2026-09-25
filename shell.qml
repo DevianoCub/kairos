@@ -13,14 +13,13 @@ import "config"
 //
 // Composition root only. Owns the service layer
 // and instantiates the panels: the per-screen
-// TopHud, plus the GLOBAL contextual active-window
-// layer (one BottomRail + one FocusCapsule, driven
-// by a single FocusPulse).
+// HUD, plus the GLOBAL contextual bottom rail
+// driven by a single FocusPulse.
 //
-// The contextual layer is deliberately singular:
+// The contextual surface is deliberately singular:
 // compositor state is global and the presentation
-// is global too — exactly one rail and one
-// capsule, never per-output copies. They follow
+// is global too — exactly one rail surface on the
+// bottom edge, never per-output copies. It follows
 // the focused workspace's screen.
 //
 // The compositor seam (services/compositor/): UI
@@ -52,15 +51,14 @@ ShellRoot {
     }
 
     // ─────────────────────────────────────────
-    // CONTEXTUAL ACTIVE-WINDOW LAYER (v0.4)
+    // CONTEXTUAL ACTIVE-WINDOW SURFACE (v0.4)
     //
     // GLOBAL, not per-output. One FocusPulse turns
     // common compositor state into a deduplicated
-    // attention signal; one BottomRail and one
-    // FocusCapsule render it. Both panel windows
-    // bind their `screen` to the focused workspace's
-    // output, so the single surface follows the
-    // user instead of being duplicated.
+    // attention signal; one BottomRail renders it.
+    // The rail binds its `screen` to the focused
+    // workspace's output, so the single surface
+    // follows the user instead of being duplicated.
     // ─────────────────────────────────────────
 
     FocusPulse {
@@ -69,11 +67,6 @@ ShellRoot {
     }
 
     BottomRail {
-        systemService: root.systemService
-        fb: fb
-    }
-
-    FocusCapsule {
         fb: fb
     }
 

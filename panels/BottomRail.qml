@@ -8,42 +8,47 @@ import "../config"
 // ─────────────────────────────────────────────
 // KAIROS BOTTOM CONTEXTUAL RAIL (v0.4)
 //
-// THE single bottom rail. Exactly one instance
-// exists for the whole shell; it follows the
-// screen that owns the focused workspace
+// THE single contextual surface. Exactly one
+// instance exists for the whole shell; it follows
+// the screen that owns the focused workspace
 // (FocusPulse.targetScreen). It is never
 // duplicated per output.
 //
-// Hidden = a 12px input strip only; revealed =
-// a 36px rail that grows upward (bottom-anchored,
-// so content slides up into view). The strip hugs
-// the actual bottom edge of the visible shell —
-// never middle-of-desktop.
+// Hidden = a 12px transparent hover strip only;
+// revealed = a 36px rail that grows upward
+// (bottom-anchored, so content slides up into view).
+// The strip hugs the actual bottom edge of the
+// visible shell — never middle-of-desktop.
 //
 //   hidden:  ···· (transparent hover strip)
 //   shown:   ───────────────────────────────
-//            [K] kitty   ~/projects/kairos  WS 03  23:47
+//            [K] kitty   ~/projects/kairos  WS 03
+//            ───────────────────────────────
+//   empty:   ───────────────────────────────
+//            WORKSPACE   03
 //            ───────────────────────────────
 //
-// Reveal causes: pointer over the strip (with an
-// exit grace) and/or a focused-window / workspace
-// change (forced reveal, auto-dismissed).
-// Disconnect reverts to the bare strip. Nothing
-// is ever fabricated; when there is no focused
-// window the window block collapses and only the
-// workspace id + clock remain.
+// Its primary purpose is active-window context:
+// a focused-window change reveals the identity
+// row; a workspace-only change reveals a
+// WORKSPACE variant. Both auto-dismiss after
+// railRevealMs. A pointer over the strip reveals
+// the rail too (with an exit grace). Disconnect
+// reverts to the bare strip. Nothing is ever
+// fabricated — a quiet idle stays fully
+// invisible.
 //
-// This rail is the single workspace indicator
-// (window identity + WS id + clock). Consumes the
-// common CompositorService contract via the shared
-// FocusPulse only.
+// No clock: time already lives in the TopHUD.
+// Nothing here duplicates the HUD.
+//
+// Consumes the common CompositorService contract
+// via the shared FocusPulse only.
 // ─────────────────────────────────────────────
 
 PanelWindow {
     id: rail
 
     property var fb: null
-    property var systemService: null
 
     screen: rail.fb !== null ? rail.fb.targetScreen : null
 
@@ -53,9 +58,9 @@ PanelWindow {
 
     implicitWidth: rail.fb !== null && rail.fb.targetScreen !== null ? rail.fb.targetScreen.width : 1536
     implicitHeight: rail.heightNow
-    // The rail is THE bottom-edge surface: it must always reserve its own
-    // strip/rail height so it stays pinned to the true bottom edge instead of
-    // being stacked above the capsule's (auto-reserved) footprint.
+    // The rail is the only bottom-edge surface: it reserves its own
+    // strip/rail height so it stays pinned to the true bottom edge for
+    // every hide/reveal cycle.
     exclusiveZone: rail.heightNow
     aboveWindows: true
     // The window color defaults to white (quickshell docs); the dark slab is
@@ -251,21 +256,34 @@ PanelWindow {
             }
         }
 
-        // ── WINDOW IDENTITY (Level 1) ──
+        // ── WINDOW CONTEXT (primary purpose) ──
         WindowIdentity {
             id: identity
+            visible: rail.fb !== null && rail.fb.hasWindow
             window: rail.fb !== null && rail.fb.hasWindow ? rail.fb.window : null
             titleWidth: 220
             Layout.alignment: Qt.AlignVCenter
+        }
 
-            // Quiet when there is nothing to identify.
-            opacity: rail.fb !== null && rail.fb.hasWindow ? 1 : 0.4
+        // ── WORKSPACE-CONTEXT VARIANT ──
+        // Empty-workspace switch: the rail still answers
+        // "where am I", in the same language.
+        Row {
+            visible: rail.fb === null || !rail.fb.hasWindow
+            spacing: 10
+            Layout.alignment: Qt.AlignVCenter
 
-            Behavior on opacity {
-                NumberAnimation {
-                    duration: Theme.animationFast
-                    easing.type: Theme.easing
-                }
+            HudLabel {
+                caption: "WORKSPACE"
+                labelColor: Theme.muted
+            }
+
+            HudText {
+                text: rail.fb !== null ? rail.fb.workspaceId : "--"
+                color: Theme.accent
+                font.pixelSize: Theme.sizeValue
+                font.bold: true
+                font.letterSpacing: 2
             }
         }
 
@@ -273,16 +291,16 @@ PanelWindow {
             Layout.fillWidth: true
         }
 
-        // ── WORKSPACE ID (relationship, not control) ──
+        // ── WORKSPACE RELATIONSHIP (window context only) ──
         HudLabel {
-            visible: rail.fb !== null && rail.fb.workspaceId !== "--"
+            visible: rail.fb !== null && rail.fb.hasWindow && rail.fb.workspaceId !== "--"
             caption: "WS"
             labelColor: Theme.subtle
             Layout.alignment: Qt.AlignVCenter
         }
 
         HudText {
-            visible: rail.fb !== null && rail.fb.workspaceId !== "--"
+            visible: rail.fb !== null && rail.fb.hasWindow && rail.fb.workspaceId !== "--"
             text: rail.fb !== null ? rail.fb.workspaceId : "--"
             color: Theme.accent
             font.pixelSize: Theme.sizeValue
@@ -291,18 +309,6 @@ PanelWindow {
             Layout.alignment: Qt.AlignVCenter
             Layout.leftMargin: 8
             Layout.topMargin: 1
-        }
-
-        // ── CLOCK (Level 2) ──
-        HudText {
-            text: rail.systemService !== null && rail.systemService !== undefined
-                ? rail.systemService.currentTime
-                : "--:--:--"
-            color: Theme.muted
-            font.pixelSize: Theme.sizeMicro
-            font.letterSpacing: Theme.trackMicro
-            Layout.alignment: Qt.AlignVCenter
-            Layout.leftMargin: 26
         }
     }
 }

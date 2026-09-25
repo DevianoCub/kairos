@@ -6,8 +6,7 @@ import "../config"
 // KAIROS WINDOW IDENTITY (v0.4)
 //
 // Compact window identity row used by the bottom
-// rail, the focus capsule and (later) the contextual
-// drawer:
+// rail and (later) the contextual drawer:
 //
 //   [K] kitty   ~/projects/kairos
 //

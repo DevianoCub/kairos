@@ -83,40 +83,38 @@ means writing one backend, not touching the UI.
 
 ## Current state
 
-- **v0.5** — **top-left workspace matrix removed**: the per-screen
-  `panels/WorkspacePanel.qml` strip is deleted. The bottom rail is now the
-  single workspace indicator (identity + WS id + clock), so the desktop isn't
-  duplicated top-left/bottom. The TopHUD stays.
-- **v0.4** — **contextual active-window UX** (single global surface, not
-  per-output):
+- **v0.4** — **single contextual active-window surface** (design correction):
+  the entire contextual layer is exactly **one** thin surface on the bottom
+  edge. Nothing floats over the wallpaper, nothing stacks, and the HUD is
+  left untouched; the center of the desktop stays pure negative space.
   - **Bottom contextual rail** (`panels/BottomRail.qml`) — one full-width
-    strip; invisible by default (a 12 px transparent hover strip only);
-    revealed by hovering the bottom edge, by a focused-window / workspace
-    change (forced reveal, auto-dismissed after `railRevealMs`), or stays
-    open while the pointer is on it. Shows window identity, the display
-    **workspace id**, and the clock. Disconnect reverts it to the bare strip.
-    A single bottom anchor + `exclusiveZone: heightNow` keeps it pinned to the
-    true bottom edge through hide/reveal cycles.
-  - **Focus capsule** (`panels/FocusCapsule.qml`) — a small floating sheet
-    near the bottom center that answers a focused-window or workspace change
-    for `focusCapsuleMs` (~2.5 s), then fades out. Workspace-only switches on
-    empty workspaces render a `WORKSPACE 04` variant. It is non-focusable and
-    tiny, so its brief input footprint is negligible.
+    strip; invisible by default (a 12 px transparent hover strip only).
+    Revealed by a focused-window / workspace change (forced reveal,
+    auto-dismissed after `railRevealMs` ≈ 3 s), or by hovering the bottom
+    edge (with an exit grace). It answers **active-window context** only:
+      - window focused → `[K] kitty   ~/projects/kairos   WS 03`
+      - empty workspace → `WORKSPACE 03`
+    Disconnect reverts to the bare strip. No clock, no metrics — that already
+    lives in the TopHUD. A single bottom anchor + `exclusiveZone: heightNow`
+    keeps it pinned to the true bottom edge through hide/reveal cycles.
+  - The **focus capsule is removed**: no floating sheet ever appears over the
+    wallpaper. Workspace changes use the same rail mechanism (the `WORKSPACE`
+    variant) instead of a second surface.
   - **`components/FocusPulse.qml`** — the single global controller: a
     fingerprint of the focused output (`focused window id | display
-    workspace`), `pulse++` only on a *logical* target change. **Title-only
-    edits update in place without replaying the entrance animation.**
-    Disconnect zeros the fingerprint and hides both instruments; reconnect
+    workspace`), `pulse++` only on a *logical* target change. Title-only
+    edits update in place without replaying the entrance animation.
+    Disconnect zeros the fingerprint and hides the rail; reconnect
     repopulates with a single pulse.
-  - Both instruments bind their `screen` to the focused workspace's output, so
-    the single capsule/rail follows the user instead of being duplicated per
-    monitor. The permanent TopHUD **WKSP chip is removed** — workspace
-    association is now conveyed contextually by the rail/capsule, keeping the
-    idle desktop clean.
+  - The rail binds its `screen` to the focused workspace's output, so the
+    single surface follows the user instead of being duplicated per monitor.
+    The desktop between HUD and rail stays cleanly empty.
   - Still consumes only the common `CompositorService` contract; no
     Niri-specific dependency in any visual component. The `WindowIdentity`
-    row (monogram tile, appId, elided title) is shared by rail and capsule and
-    is reusable for the future right-side contextual drawer.
+    row (monogram tile, appId, elided title) is reusable for the future
+    right-side contextual drawer.
+  - The top-left workspace matrix (v0.3.x) was removed; the rail is now the
+    single workspace indicator.
 - **v0.3.1** — **hardened Niri integration + compositor seam**:
   - `services/compositor/CompositorService.qml` — the **common desktop-state
     contract** the UI binds to: `connected`, `connectionState`,
@@ -134,13 +132,14 @@ means writing one backend, not touching the UI.
     per-column status rails (active = accent, occupied = strong, urgent =
     warning, idle = quiet), `▲` caret + `ACTIVE` tag, and restrained offline
     readouts (`◦ no backend` when no compositor is supported, `○ offline` /
-    `○ link` during outages) — no fabricated data. **Removed in v0.5** (see
-    Current state); the bottom rail is now the single workspace indicator.
+    `○ link` during outages) — no fabricated data. **Removed in the v0.4
+    correction** (see Current state); the bottom rail is now the single
+    workspace indicator.
   - The TopHUD **WKSP** chip (added in v0.3) read the compositor-native index
     correctly — Niri is 1-based — and showed `--` while the link was down.
     (As of v0.4 the chip is removed: the downlink state is honest, but the
     desktop stays quiet; workspace association now lives in the contextual
-    rail/capsule.) The retry cadence is `niriRetryMinMs` / `niriRetryMaxMs` /
+    rail.) The retry cadence is `niriRetryMinMs` / `niriRetryMaxMs` /
     `niriRetryIdleMs`.
 - **v0.3** — Niri IPC + workspace matrix (superseded by the v0.3.1 backend).
 - **v0.2** — Top HUD overlay on every screen: identity, status, compositor

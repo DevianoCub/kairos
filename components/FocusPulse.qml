@@ -6,10 +6,9 @@ import QtQuick
 //
 // SINGLE, GLOBAL contextual controller. One
 // instance peers from shell.qml into the whole
-// desktop and feeds BOTH contextual instruments
-// (the bottom rail and the focus capsule). There
-// is exactly one capsule and one rail, no matter
-// how many outputs exist.
+// desktop and drives the single contextual
+// instrument (the bottom rail). There is exactly
+// one rail, no matter how many outputs exist.
 //
 // Consumes ONLY the common CompositorService
 // contract. No compositor-specific types, no IPC.
@@ -24,7 +23,7 @@ import QtQuick
 // `targetScreen` is the Quickshell screen that
 // owns the focused workspace (falling back to the
 // focused window's output, then the primary
-// screen), so the single contextual UI follows
+// screen), so the single contextual rail follows
 // the user instead of duplicating per output.
 //
 // On disconnect, state is zeroed and the
