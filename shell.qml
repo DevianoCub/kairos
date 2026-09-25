@@ -123,6 +123,20 @@ ShellRoot {
         function launcherRun(): void {
             launcher.activateSelection()
         }
+        function launcherState(): string {
+            const s = launcher.service
+            const idx = launcher._selectedIndex
+            const n = s !== null ? s.results.length : 0
+            const nm = function(i) {
+                const r = i >= 0 && i < n ? s.results[i] : null
+                return r !== null ? String(r.name) : ""
+            }
+            return `${s.query}|count=${n}|idx=${idx}|sel=${nm(idx)}|0=${nm(0)}`
+        }
+        function launcherGeom(): void {
+            const m = launcher.margins
+            console.info(`[Launcher] geom m.bottom=${m.bottom.toFixed(1)} screenH=${launcher._screenH.toFixed(1)} dpr=${launcher._dpr} open=${launcher.open} w=${launcher.width} h=${launcher.height}`)
+        }
     }
 
     Component.onCompleted: {

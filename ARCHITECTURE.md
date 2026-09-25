@@ -258,19 +258,70 @@ AppLauncherService (services/commands/AppLauncherService.qml)
 Launcher (components/launcher/)                    view + navigation only
   PanelWindow — ephemeral, exclusiveZone: 0, aboveWindows, focusable
   CLOSED→OPENING→OPEN→CLOSING→CLOSED; fade + late focus hand-off
+  Sized to the instrument column; bottom-anchor only → the compositor
+  centers the unanchored axis; margins.bottom = (screenH - h)/2 + shiftY
   LauncherSearch (TextInput, > prompt, nav signals; never owns state)
-  LauncherResult (row paint: name/generic/category, 2px accent bar)
+  LauncherResult (result NODE on the spine: 1px/3px marker on the spine
+                  column, name right of it, uppercase category tag;
+                  hover select on MOVEMENT, click activates)
     │
     ├── publishes → CommandService.publishContextual("LAUNCHED <Name>")
     │                 → BottomRail reveals its rail + label for ~3 s
     └── triggered by → IpcHandler{ target "kairos" } (toggleLauncher /
-                       launcherQuery / launcherMove / launcherRun)
+                       launcherQuery / launcherMove / launcherRun /
+                       launcherState / launcherGeom)
 ```
 
 Rule of separation: the service owns data, model, search and execution; the UI
 owns the state machine, selection and painting. The launcher never reads a
 `.desktop` file, spawns a process or knows a compositor name. All four IPC
 functions drive the **exact** code paths the keyboard uses.
+
+### Surface geometry (Nexus placement)
+
+The launcher is a **sized** window, not a stretched layer: `anchors.bottom`
+only (no left/right), plus an explicit `width: Settings.launcherMaxWidth` and a
+`margins.bottom` derived from `(screenH - height)/2 + launcherCenterShiftY`.
+Under Niri both side-anchors stretch the surface full-width, which pinned the
+instrument off-center; bottom-anchor-only makes the compositor center the
+unanchored axis. `_screenW/_screenH` read `screen.width/height` directly — the
+QML-reported `devicePixelRatio` is unreliable at the layer scale and must not
+be divided by. The spine column sits at `_spineX ≈ nexus.width/2`; the window
+elevation is exactly `launcherCenterShiftY` logical px above screen center.
+
+### The Nexus view
+
+```text
+            COMMAND 03                      ← caption + live zero-padded count
+              > fire▮                       ← NUCLEUS (prompt), column centered
+            ────────────                      (underline hugs the typed width)
+    ●                 Firefox        WEB    ← nodes on the shared 1 px spine
+    ●  Files                            …
+    ●  Kitty                 TERMINAL
+        │
+        │   spine (Theme.faint) full height; selected segment
+        │   (nucleus → selected node) draws Theme.accent = "energized"
+   ↑↓ SELECT · ↵ RUN · ESC CLOSE
+```
+
+- 1 px spine: x `_spineX`, y 0 → `nucleusRow.y`, Theme.faint. The energized
+  `pathSegment` (Theme.accent) spans `rowCenterY(selected) → nucleusRow.y` and
+  re-animates on every selection move.
+- Result gaps: `_resultCount > 4` → compact (`launcherNodeGapCompact`), else
+  loose (`launcherNodeGapLoose`). Rows: 1 → single node on a short energized
+  stem; 0 → `NO MATCH` line, spine hidden.
+- Entrance: spine, then nodes, one per 40 ms (`_stagger`); only on OPEN, never
+  replayed by typing.
+
+### Selection input contract
+
+Hover selection is driven by **`onPositionChanged`**, never `onEntered` — a
+freshly instantiated delegate under a stationary cursor fires a synthetic enter
+and would otherwise re-select itself. A `_hoverGuardUntil` (800 ms) window is
+armed on every open/results-change, and `_keyboardMode` is set by the first
+`moveSelection`/`activateSelection` — after which hover re-entries never
+overwrite the keyboard selection. Query/results changes reset index 0 and clear
+keyboard mode (unchanged).
 
 ### Search semantics (deterministic)
 

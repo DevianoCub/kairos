@@ -173,14 +173,16 @@ reason=timer`, `HOVER_REVEAL -> HIDE_PENDING`, …).
 
 The launcher is fully exercisable without sending a keystroke: the IpcHandler
 target `kairos` exposes `toggleLauncher`, `launcherQuery(text)`,
-`launcherMove(dir)` and `launcherRun()` that invoke the exact keyboard code
-paths. All canonical driver commands:
+`launcherMove(dir)`, `launcherRun()`, `launcherState()` and `launcherGeom()`
+that invoke the exact keyboard code paths. All canonical driver commands:
 
 ```bash
 qs ipc -c kairos call kairos toggleLauncher
 qs ipc -c kairos call kairos launcherQuery kit
 qs ipc -c kairos call kairos launcherMove -1
 qs ipc -c kairos call kairos launcherRun
+qs ipc -c kairos call kairos launcherState   # query|count|idx|sel|0
+qs ipc -c kairos call kairos launcherGeom    # margins/screenH/dpr/window dims
 ```
 
 1. **Clean start** — restart (`bash /tmp/relaunch.sh`); log shows
@@ -199,22 +201,44 @@ qs ipc -c kairos call kairos launcherRun
    launcher closes itself (`close reason=launch`) and `CommandService`
    triggers the rail (`▶ LAUNCHED kitty`, reveals ~3 s then auto-hides).
 5. **Selection** — `launcherMove(-1)` on a non-empty query wraps to the last
-   result; a following `launcherRun` launches exactly that app.
+   result; a following `launcherRun` launches exactly that app. Repro
+   determinism open ⇒ `kit` ⇒ `+1` ⇒ `-1` ⇒ `run`; open ⇒ idx0/kitty,
+   +1 ⇒ idx1/ONLYOFFICE, -1 ⇒ idx0/kitty, run launches kitty — the same
+   every cycle (no synthetic-hover hijack: see item 7).
 6. **Deterministic search** — the ported scorer in
    `python3 /tmp/kairos_sim.py` (prefix/subsequence/soft-signal/tie/empty
    battery, 13 assertions, from the real scoring) must pass; confirm with real
    queries that `fire` → Firefox, `kit` → kitty, empty → first app
-   alphabetically, and garbage → `NO MATCH`.
-7. **Geometry invariant** — screenshot before and while the launcher is open;
-   with the HUD (top) and rail (bottom) bands and the centered palette masked
-   out, the application region is pixel-identical (mean diff ≈ 0). The
-   launcher is an `exclusiveZone: 0` overlay; no window moves or resizes.
-8. **Clean close paths** — `close reason=ipc` (toggle), `close reason=launch`
-   (activation), `close reason=escape` (Escape key — code-inspected, since no
-   key-injection tool exists on this machine; wtype/ydotool are absent).
-   Because `focusable: true` briefly moves keyboard focus to the shell, the
-   rail force-reveals with `reason=workspace-change` while typing — expected
-   and acceptable.
+   alphabetically, and garbage → `NO MATCH` (`launcherState` shows `count=0`
+   and the Nexus shows the `NO MATCH` line with the spine absent).
+7. **Nexus placement & rendering** — the launcher is a *sized* centered
+   window: bottom-anchor only + explicit width, elevated `launcherCenterShiftY`
+   above screen center. `launcherGeom` reports `m.bottom = (screenH - h)/2 +
+   42`. Verify the box lands centered (window-probe: temporarily paint the
+   nexus opaque in a solid color, grim the output, measure the bbox — must be
+   symmetric about screen center, then revert). The 1 px spine (Theme.faint)
+   and energized segment (Theme.accent) run at `_spineX ≈ nexus.width/2`; on a
+   synthetic wallpaper use a wide opaque probe of the spine rect to confirm its
+   column + full height (the 1 px line anti-aliases on animated bright
+   backgrounds and won't survive exact-color scans).
+8. **Geometry invariant** — the launcher is an `exclusiveZone: 0` overlay; no
+   app window moves or resizes. Proof under Niri (prefer this to pixel-diffs —
+   an animated wallpaper invalidates them): capture `niri msg -j windows`'s
+   geometry key/id+size before, while open, and with a query open — byte-
+   identical, and launching only *adds* a window. Diagnostic hooks:
+   `launcherGeom` reads margins/screen/dpr/window dims and proves the 42 px
+   elevation and correct logical dims (do NOT divide `screen.width` by the
+   QML-reported `devicePixelRatio`).
+9. **Hover vs keyboard** — selection by cursor *movement* (guarded 800 ms after
+   open/results) hand-offs to keyboard after the first arrow. Confirm a
+   stationary cursor over a freshly queried delegate never changes `idx` in
+   `launcherState` (synthetic-enter hijack regression).
+10. **Clean close paths** — `close reason=ipc` (toggle), `close reason=launch`
+    (activation), `close reason=escape` (Escape key — code-inspected, since no
+    key-injection tool exists on this machine; wtype/ydotool are absent).
+    Because `focusable: true` briefly moves keyboard focus to the shell, the
+    rail force-reveals with `reason=workspace-change` while typing — expected
+    and acceptable.
 
 ## Real-session Niri checklist
 

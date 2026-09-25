@@ -64,8 +64,9 @@ Two singleton modules centralize the shell:
   Every color and size flows from here.
 - `config/Settings.qml` — runtime behavior: HUD height, refresh rate,
   clock/date format, exclusive zone, rail timing, launcher geometry
-  (`launcherWidth`, `launcherMaxResults`, `launcherResultHeight`,
-  `launcherMarginBottom`).
+  (`launcherMaxWidth`, `launcherCenterShiftY`, `launcherGateGap`,
+  `launcherMaxResults`, `launcherResultHeight`, `launcherNodeGapLoose`,
+  `launcherNodeGapCompact`, `launcherPromptWidth`).
 
 Set `exclusiveZone` in `Settings.qml` to `> 0` to make the HUD reserve screen
 space (pushes windows down); the default of `0` keeps KAIROS a pure overlay.
@@ -101,14 +102,27 @@ means writing one backend, not touching the UI.
     the Exec line and stripped argument field codes (`%U %u %F %f %i %c %k`,
     `%%`→`%`), so execution is argv-parsed, shell-free and injection-safe
     (`Terminal=true` entries run raw / no TTY — v0.5 policy).
-  - **`components/launcher/Launcher.qml`** — an **ephemeral** `PanelWindow`
-    (bottom overlay, `exclusiveZone: 0`, `aboveWindows`, focused-for-typeahead),
-    fully unmapped when CLOSED: the desktop keeps exactly two permanent surfaces,
-    and the launcher never moves or resizes an application window. Fade + late
-    focus hand-off, deterministic query/selection reset on open, selection wrap,
-    empty/`NO MATCH` states. Row surface: accent `>` prompt + `COMMAND` header,
-    zero-padded live result count, `↑↓ SELECT ENTER RUN ESC CLOSE` hint, 2 px
-    accent selection bar — the same restrained instrument language as the HUD.
+  - **`components/launcher/Launcher.qml`** — the **COMMAND NEXUS**: an
+    **ephemeral** `PanelWindow` (bottom-anchored overlay, `exclusiveZone: 0`,
+    `aboveWindows`, focused-for-typeahead) sized to the instrument column and
+    centered on the output with a slight upward elevation
+    (`Settings.launcherCenterShiftY`). Fully unmapped when CLOSED — the desktop
+    keeps exactly two permanent surfaces and the launcher never moves or resizes
+    an application window (proven under Niri: the `niri msg -j windows`
+    geometry key is byte-identical before / while open / with a query open).
+    The surface is a **path instrument**, not a menu: the `COMMAND` caption and
+    the zero-padded live count sit above the `>` prompt (the NUCLEUS); results
+    ascend from it as bare lines of type on a shared 1 px vertical SPINE (the
+    command bus); the selected node fills a 3 px marker and ENERGIZES the spine
+    segment between itself and the nucleus in accent; name brightens/bolds on
+    selection; first category rides the row as a quiet uppercase micro-tag; no
+    icons, no cards, no blur. Layout breathes: 2–4 results use the loose gap,
+    5+ compact-stack; 1 result is a single node on a short energized stem; 0
+    results prints `NO MATCH` and the spine is absent. Selection is hover-driven
+    (on cursor *movement*, guarded for 800 ms after open/results so freshly
+    instantiated delegates under a stationary cursor can't hijack it) and
+    hand-off to the keyboard after the first arrow — backend semantics, state
+    machine, guards, timers and the four IPC entry points unchanged.
   - **`services/commands/CommandService.qml`** — the v0.5 command bus. UI
     surfaces publish intents (one-shot `contextualEvent(label)`,
     `appLaunched(name)`); the BottomRail consumes the contextual line

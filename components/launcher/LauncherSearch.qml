@@ -28,6 +28,8 @@ Item {
     // Programmatic access used by the Launcher.
     function setQuery(t) { input.text = t }
     function currentText() { return input.text }
+    // Pixel width of the typed command (drives the nucleus baseline).
+    function promptPixelWidth() { return input.contentWidth }
     function forceFocus() { input.forceActiveFocus() }
     function releaseFocus() {
         input.focus = false
