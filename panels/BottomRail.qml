@@ -54,6 +54,19 @@ PanelWindow {
     id: rail
 
     property var fb: null
+    property var commands: null
+
+    // v0.5 phase-8 bridge: the command layer may drop a
+    // ONE-SHOT contextual line here (e.g. "LAUNCHED
+    // Firefox"). Display only — nothing in the
+    // visibility state machine is touched; the rail
+    // reuses its existing forceReveal path and the line
+    // clears on the same cadence as the reveal timer.
+    property string contextualLabel: ""
+    property Timer contextualTimer: Timer {
+        interval: Settings.railRevealMs
+        onTriggered: rail.contextualLabel = ""
+    }
 
     screen: rail.fb !== null ? rail.fb.targetScreen : null
 
@@ -228,6 +241,20 @@ PanelWindow {
         }
     }
 
+    // Phase 8: command-layer contextual feedback (e.g.
+    // "LAUNCHED Firefox"). Reveals the rail via the
+    // SAME single decision path; the label clears on the
+    // reveal-timer cadence and auto-hide is untouched.
+    Connections {
+        target: rail.commands
+        function onContextualEvent(label) {
+            if (label === undefined || label === null || label.trim() === "") return
+            rail.contextualLabel = label.trim()
+            rail.contextualTimer.restart()
+            rail.forceReveal("contextual")
+        }
+    }
+
     onLinkedChanged: {
         if (!rail.linked) {
             rail.resetHidden("disconnect")
@@ -397,6 +424,34 @@ PanelWindow {
                 font.pixelSize: Theme.sizeValue
                 font.bold: true
                 font.letterSpacing: 2
+            }
+        }
+
+        // ── COMMAND-LAYER FEEDBACK (v0.5 phase 8) ──
+        // One-shot line from the command bus, shown while
+        // the reveal is live: "LAUNCHED Firefox". Sits
+        // between the window/workspace context and the WS
+        // relation; fades with everything else.
+        Row {
+            visible: rail.contextualLabel !== ""
+            spacing: 8
+            Layout.alignment: Qt.AlignVCenter
+
+            HudText {
+                text: "▶"
+                color: Theme.ok
+                font.pixelSize: Theme.sizeLabel
+                font.bold: true
+                anchors.verticalCenter: parent.verticalCenter
+            }
+
+            HudText {
+                text: rail.contextualLabel
+                color: Theme.textBright
+                font.pixelSize: Theme.sizeValue
+                font.bold: true
+                font.letterSpacing: 1
+                anchors.verticalCenter: parent.verticalCenter
             }
         }
 

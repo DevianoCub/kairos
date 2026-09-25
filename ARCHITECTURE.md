@@ -52,6 +52,8 @@ kairos/
 | `SystemService` | clock, MEM, LOAD, UPTIME, CPU%, NET RX/TX, TEMP, compositor name, synthetic status | v0.2 |
 | `CompositorService` (base) | the common desktop-state contract | v0.3.1, UI binds only here |
 | `NiriBackend` | Niri IPC link, workspaces, windows, focus, outputs, reconnect | v0.3.1, read-only |
+| `AppLauncherService` | desktop-entry discovery, model, search scoring, launch execution | v0.5, no visuals |
+| `CommandService` | the command bus: one-shot intents (`contextualEvent`, `appLaunched`, `publishContextual`) | v0.5, event bus |
 
 Delta metrics (CPU%, NET rates) keep raw counters snapshot between ticks and
 compute one sample per tick. Histories are bounded (`Settings.graphSamples`)
@@ -83,8 +85,10 @@ The **contextual active-window surface is deliberately NOT per-screen**: exactly
 one `BottomRail` exists in the whole shell, driven by a single `FocusPulse`. It
 binds `screen: pulse.targetScreen`, so the single surface follows the output
 that owns the focused workspace instead of being duplicated. Global overlays
-(launcher, control center, notification center) will be single instances —
-never duplicated per monitor.
+(launcher, control center, notification center) are single instances — never
+duplicated per monitor. The launcher is **ephemeral**: it is a third layer-shell
+surface only while a command is being typed, and it is fully unmapped once
+closed (`exclusiveZone: 0` overlay, so no window geometry ever changes).
 
 ## Compositor & desktop state
 
@@ -231,6 +235,58 @@ Design rules:
   elided title) is the shared identity row; a future right-side contextual
   drawer reuses `FocusPulse`/`WindowIdentity` unchanged and only does its own
   reveal/pin geometry.
+
+## Command center / app launcher (v0.5)
+
+The command center is a **foundation for the whole command layer**. v0.5 ships
+the app launcher only; volume, brightness, notifications, media and power attach
+later by publishing intents on the same command bus.
+
+```text
+Quickshell.DesktopEntries (XDG desktop-entry index, live-monitored)
+    │  applications.values + applicationsChanged (coalesced)
+    ▼
+AppLauncherService (services/commands/AppLauncherService.qml)
+    ├── snapshot model (id, name, genericName, comment, icon, keywords,
+    │                  categories, tokens, entry) — deterministic sort
+    ├── search: prefix/substring/subsequence scoring over lowercased
+    │   name/generic/id/keywords/categories/comment; score + name/id ties
+    └── launch(entry) → DesktopEntry.execute()  (parsed argv, shell-free,
+                                                 field codes stripped)
+    │
+    ▼
+Launcher (components/launcher/)                    view + navigation only
+  PanelWindow — ephemeral, exclusiveZone: 0, aboveWindows, focusable
+  CLOSED→OPENING→OPEN→CLOSING→CLOSED; fade + late focus hand-off
+  LauncherSearch (TextInput, > prompt, nav signals; never owns state)
+  LauncherResult (row paint: name/generic/category, 2px accent bar)
+    │
+    ├── publishes → CommandService.publishContextual("LAUNCHED <Name>")
+    │                 → BottomRail reveals its rail + label for ~3 s
+    └── triggered by → IpcHandler{ target "kairos" } (toggleLauncher /
+                       launcherQuery / launcherMove / launcherRun)
+```
+
+Rule of separation: the service owns data, model, search and execution; the UI
+owns the state machine, selection and painting. The launcher never reads a
+`.desktop` file, spawns a process or knows a compositor name. All four IPC
+functions drive the **exact** code paths the keyboard uses.
+
+### Search semantics (deterministic)
+
+- Empty query → whole catalog, alphabetical (name, then id).
+- Field codes in `Exec` were already stripped at desktop-entry parse time;
+  `execute()` runs the parsed argv detached with no shell — no injection, no
+  `%` leakage. `Terminal=true` runs raw (no TTY) in v0.5.
+- Scoring tiers: name prefix/substring (strongest) → genericName → id →
+  subsequence fuzz on the name → keyword/category/comment soft signals; ties
+  break by name, then id (`localeCompare`).
+
+### Lifecycle safety
+
+Opening sets the query to `""` and the selection to index 0; edits reset the
+selection; model changes clamp it in range. Closing releases the keyboard; the
+compositor re-focuses the previous window — KAIROS makes no focus calls.
 
 ## Performance stance
 

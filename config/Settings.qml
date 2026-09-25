@@ -51,4 +51,10 @@ QtObject {
     readonly property int railHeight: 36
     readonly property int railRevealMs: 3000
     readonly property int railHoverGraceMs: 1200
+
+    // Command center / app launcher (v0.5).
+    readonly property int launcherWidth: 520
+    readonly property int launcherMaxResults: 8
+    readonly property int launcherResultHeight: 26
+    readonly property int launcherMarginBottom: 22
 }

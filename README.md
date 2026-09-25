@@ -63,7 +63,9 @@ Two singleton modules centralize the shell:
 - `config/Theme.qml` — palette, fonts, typography scale, geometry, motion.
   Every color and size flows from here.
 - `config/Settings.qml` — runtime behavior: HUD height, refresh rate,
-  clock/date format, exclusive zone.
+  clock/date format, exclusive zone, rail timing, launcher geometry
+  (`launcherWidth`, `launcherMaxResults`, `launcherResultHeight`,
+  `launcherMarginBottom`).
 
 Set `exclusiveZone` in `Settings.qml` to `> 0` to make the HUD reserve screen
 space (pushes windows down); the default of `0` keeps KAIROS a pure overlay.
@@ -83,6 +85,39 @@ means writing one backend, not touching the UI.
 
 ## Current state
 
+- **v0.5** — **command center, part 1: app launcher foundation** (keyboard-first,
+  ephemeral, compositor-agnostic):
+  - **`services/commands/AppLauncherService.qml`** — owns discovery, the model,
+    search and launching. Discovery sources the built-in Quickshell desktop-entry
+    index (`Quickshell.DesktopEntries`): standard XDG locations, valid non-hidden
+    launchable applications only, **no hardcoded app**, **no per-keystroke
+    rescan** — the index refresh is coalesced and driven only by
+    `applicationsChanged` (a new `.desktop` file appears/disappears live).
+  - **Search** is pure in-memory per keystroke: prefix/substring then subsequence
+    fuzz over name, generic name, id, keywords, categories and comment, with
+    deterministic scoring + name/id tie-breaks plus soft keyword/category/comment
+    signals. The empty query shows the whole catalog alphabetically.
+  - **Launch** uses `DesktopEntry.execute()` — Quickshell has already tokenized
+    the Exec line and stripped argument field codes (`%U %u %F %f %i %c %k`,
+    `%%`→`%`), so execution is argv-parsed, shell-free and injection-safe
+    (`Terminal=true` entries run raw / no TTY — v0.5 policy).
+  - **`components/launcher/Launcher.qml`** — an **ephemeral** `PanelWindow`
+    (bottom overlay, `exclusiveZone: 0`, `aboveWindows`, focused-for-typeahead),
+    fully unmapped when CLOSED: the desktop keeps exactly two permanent surfaces,
+    and the launcher never moves or resizes an application window. Fade + late
+    focus hand-off, deterministic query/selection reset on open, selection wrap,
+    empty/`NO MATCH` states. Row surface: accent `>` prompt + `COMMAND` header,
+    zero-padded live result count, `↑↓ SELECT ENTER RUN ESC CLOSE` hint, 2 px
+    accent selection bar — the same restrained instrument language as the HUD.
+  - **`services/commands/CommandService.qml`** — the v0.5 command bus. UI
+    surfaces publish intents (one-shot `contextualEvent(label)`,
+    `appLaunched(name)`); the BottomRail consumes the contextual line
+    (e.g. `▶ LAUNCHED Firefox`) through its existing force-reveal path.
+  - **Trigger** is compositor-agnostic over Quickshell IPC target `kairos`:
+    `qs ipc -c kairos call kairos toggleLauncher`. Scripted control mirrors the
+    exact keyboard code paths: `launcherQuery(text)`, `launcherMove(dir)`,
+    `launcherRun()`. No keybind ships this milestone (add `Super+Space` → the
+    launch command in your compositor).
 - **v0.4** — **single contextual active-window surface** (design correction):
   the entire contextual layer is exactly **one** thin surface on the bottom
   edge. Nothing floats over the wallpaper, nothing stacks, and the HUD is
@@ -164,5 +199,6 @@ means writing one backend, not touching the UI.
     deltas, with a self-scaling history sparkline.
   - **TMP** — max on-die temperature from Linux thermal zones.
   - Derived status (`ONLINE` / `CAUTION` / `CRITICAL`) from real thresholds.
-- Planned: GPU/DISK/BATTERY telemetry, command interface, control center,
-  right-side contextual drawer, media, notifications, lock, power UI.
+- Planned: GPU/DISK/BATTERY telemetry, control center, command families
+  (volume, brightness, notifications, media, bluetooth, wifi, power),
+  right-side contextual drawer, lock, power UI.

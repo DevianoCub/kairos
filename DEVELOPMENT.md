@@ -22,7 +22,7 @@ Run with verbose logging and inspect stderr:
 qs -c kairos -vv
 ```
 
-A clean startup prints the `[KAIROS] v0.4 online` line and no `TypeError` /
+A clean startup prints the `[KAIROS] v0.5 online` line and no `TypeError` /
 `is not defined` / binding-loop warnings. If the link to Niri is down you will
 see a single `[KAIROS] niri: link lost (...), retrying` warning per drop
 (paired with a `quickshell.io.socket` warn), then silent backoff retries. An
@@ -169,9 +169,56 @@ reason=timer`, `HOVER_REVEAL -> HIDE_PENDING`, …).
    dismiss identically every cycle. Any log line where two timers fight over
    visibility is a bug.
 
+## Test the v0.5 app launcher
+
+The launcher is fully exercisable without sending a keystroke: the IpcHandler
+target `kairos` exposes `toggleLauncher`, `launcherQuery(text)`,
+`launcherMove(dir)` and `launcherRun()` that invoke the exact keyboard code
+paths. All canonical driver commands:
+
+```bash
+qs ipc -c kairos call kairos toggleLauncher
+qs ipc -c kairos call kairos launcherQuery kit
+qs ipc -c kairos call kairos launcherMove -1
+qs ipc -c kairos call kairos launcherRun
+```
+
+1. **Clean start** — restart (`bash /tmp/relaunch.sh`); log shows
+   `[KAIROS] v0.5 online`, `niri: linked`, exactly one
+   `[Launcher] desktop index: N apps` and no warnings. `niri msg -j layers`
+   reports exactly **2** `quickshell` surfaces at rest.
+2. **Ephemerality** — `toggleLauncher` opens a **3rd** surface; toggling or
+   launching returns to **2**. Rapid double-toggle is a no-op (guard).
+3. **Live discovery, no rescan** — `desktop index` appears in the log only on
+   startup or a real file change (never per keystroke). While running, write a
+   `.desktop` into `~/.local/share/applications/`: the index line reappears
+   with the new count and `launcherQuery <new name>` + `launcherRun` launches
+   it; remove the file and the count drops back.
+4. **Launch flows** — `launcherQuery kit` + `launcherRun` → log
+   `[Launcher] launched kitty (kitty)`, a kitty process/window appears, the
+   launcher closes itself (`close reason=launch`) and `CommandService`
+   triggers the rail (`▶ LAUNCHED kitty`, reveals ~3 s then auto-hides).
+5. **Selection** — `launcherMove(-1)` on a non-empty query wraps to the last
+   result; a following `launcherRun` launches exactly that app.
+6. **Deterministic search** — the ported scorer in
+   `python3 /tmp/kairos_sim.py` (prefix/subsequence/soft-signal/tie/empty
+   battery, 13 assertions, from the real scoring) must pass; confirm with real
+   queries that `fire` → Firefox, `kit` → kitty, empty → first app
+   alphabetically, and garbage → `NO MATCH`.
+7. **Geometry invariant** — screenshot before and while the launcher is open;
+   with the HUD (top) and rail (bottom) bands and the centered palette masked
+   out, the application region is pixel-identical (mean diff ≈ 0). The
+   launcher is an `exclusiveZone: 0` overlay; no window moves or resizes.
+8. **Clean close paths** — `close reason=ipc` (toggle), `close reason=launch`
+   (activation), `close reason=escape` (Escape key — code-inspected, since no
+   key-injection tool exists on this machine; wtype/ydotool are absent).
+   Because `focusable: true` briefly moves keyboard focus to the shell, the
+   rail force-reveals with `reason=workspace-change` while typing — expected
+   and acceptable.
+
 ## Real-session Niri checklist
 
-1. Start KAIROS → banner `v0.4`, `COMPOSITOR NIRI`; no permanent workspace UI,
+1. Start KAIROS → banner `v0.5`, `COMPOSITOR NIRI`; no permanent workspace UI,
    no top-left matrix, no floating capsule — the desktop is clean until
    interaction. Bottom edge shows only the 12 px strip.
 2. Switch `WS1`…`WS4` → (Niri emits `WorkspaceActivated` only for switches —
@@ -183,6 +230,9 @@ reason=timer`, `HOVER_REVEAL -> HIDE_PENDING`, …).
    the restored window name appears once in the rail.
 5. Restart Niri (or kill its socket) → KAIROS survives, reports
    `reconnecting`, the rail hides, and relinks when Niri returns.
+6. Bind `Super+Space` (or similar) to
+   `qs ipc -c kairos call kairos toggleLauncher`; type a name, Enter to run,
+   Escape to dismiss — launch returns keyboard focus to the previous window.
 
 ## Milestones
 
@@ -192,8 +242,11 @@ reason=timer`, `HOVER_REVEAL -> HIDE_PENDING`, …).
 - v0.3.1 hardened Niri backend + compositor seam
 - v0.4 contextual active-window UX — one bottom rail; capsule + matrix
   removed (design correction), rail = the single workspace indicator
-  (current)
-- v0.5+ GPU/DISK/BATTERY telemetry, command interface, control center,
-  right-side contextual drawer, media, notifications, lock, power
+- v0.5 command center part 1 — app launcher foundation: live XDG discovery,
+  deterministic search, safe launch, ephemeral surface, command bus +
+  rail feedback, IPC trigger (current)
+- v0.5+ command families (volume, brightness, notifications, media),
+  control center, GPU/DISK/BATTERY telemetry, right-side contextual drawer,
+  lock, power
 
 Implement in order; validate each milestone before starting the next.
